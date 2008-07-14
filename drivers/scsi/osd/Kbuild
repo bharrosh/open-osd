@@ -34,6 +34,10 @@ ccflags-y += -DCONFIG_SCSI_OSD_DPRINT_SENSE=1
 # this it will work. This might break in future kernels
 LINUXINCLUDE := -I$(OSD_INC) $(LINUXINCLUDE)
 
+# osd_ktests.ko is only built out of tree
+#   see git://git.open-osd.org open-osd for latest code
+obj-m += osd_ktests.o
+
 endif
 
 # libosd.ko - osd-initiator library
