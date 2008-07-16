@@ -42,6 +42,7 @@
 
 #include <scsi/osd_initiator.h>
 #include <scsi/osd_sec.h>
+#include <scsi/osd_attributes.h>
 
 #include "osd_ktests.h"
 #include "osd_debug.h"
@@ -266,6 +267,90 @@ static int ktest_remove_par(struct osd_dev *osd_dev)
 	return 0;
 }
 
+static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
+	bool doread, bool doset, bool doget)
+{
+	struct request_queue *req_q = osd_dev->scsi_device->request_queue;
+	struct osd_request *or;
+	char g_caps[OSD_CAP_LEN];
+	int ret;
+	struct bio *bio;
+	const char *domsg;
+	/* set attrs */
+	static char name[] = "ktest_write_read_attr";
+	__be64 max_len = cpu_to_be64(0x80000000L);
+	struct osd_obj_id obj = {
+		.partition = first_par_id,
+		.id = first_obj_id,
+	};
+	struct osd_attr set_attrs[] = {
+		ATTR_SET(OSD_APAGE_OBJECT_QUOTAS, OSD_ATTR_OQ_MAXIMUM_LENGTH,
+			sizeof(max_len), &max_len),
+		ATTR_SET(OSD_APAGE_OBJECT_INFORMATION, OSD_ATTR_OI_USERNAME,
+			sizeof(name), name),
+	};
+	struct osd_attr get_attrs[] = {
+		ATTR_DEF(OSD_APAGE_OBJECT_INFORMATION,
+			OSD_ATTR_OI_USED_CAPACITY, sizeof(__be64)),
+		ATTR_DEF(OSD_APAGE_OBJECT_INFORMATION,
+			OSD_ATTR_OI_LOGICAL_LENGTH, sizeof(__be64)),
+	};
+
+	KTEST_START_REQ(osd_dev, or);
+	bio = bio_map_kern(req_q, buff, BUFF_SIZE, GFP_KERNEL);
+	if (!bio) {
+		OSD_ERR("!!! Failed to allocate BIO\n");
+		return -ENOMEM;
+	}
+
+	if (doread) {
+		osd_req_read(or, &obj, bio, 0);
+		domsg = "Read-with-attr";
+	} else {
+		osd_req_write(or, &obj, bio, 0);
+		domsg = "Write-with-attr";
+	}
+
+	if (doset)
+		osd_req_add_set_attr_list(or, set_attrs, 2);
+	if (doget)
+		osd_req_add_get_attr_list(or, get_attrs, 2);
+
+	ret = test_exec(or, g_caps, &obj);
+	if (!ret && doget) {
+		void *iter = NULL, *pFirst, *pSec;
+		int nelem = 2;
+		u64 capacity_len = ~0;
+		u64 logical_len = ~0;
+
+		osd_req_decode_get_attr_list(or, get_attrs, &nelem, &iter);
+
+		/*FIXME: Std does not guaranty order of return attrs */
+		pFirst = get_attrs[0].val_ptr;
+		if (pFirst)
+			capacity_len = get_unaligned_be64(pFirst);
+		else
+			OSD_ERR("failed to read capacity_used\n");
+		pSec = get_attrs[1].val_ptr;
+		if (pSec)
+			logical_len = get_unaligned_be64(pSec);
+		else
+			OSD_ERR("failed to read logical_length\n");
+		OSD_INFO("%s capacity=%llu len=%llu\n",
+			domsg, _LLU(capacity_len), _LLU(logical_len));
+	}
+
+	osd_end_request(or);
+	if (ret) {
+		OSD_ERR("!!! Error executing %s => %d doset=%d doget=%d\n",
+			domsg, ret, doset, doget);
+		return ret;
+	}
+	OSD_DEBUG("%s\n", domsg);
+
+	return 0;
+}
+
 int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 		unsigned long arg __unused)
 {
@@ -312,11 +397,35 @@ int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 /* List all objects */
 
 /* Write with get_attr */
+	ret = ktest_write_read_attr(od, write_buff, false, false, true);
+	if (ret)
+		goto dev_fini;
+
 /* Write with set_attr */
+	ret = ktest_write_read_attr(od, write_buff, false, true, false);
+	if (ret)
+		goto dev_fini;
+
 /* Write with set_attr + get_attr */
+	ret = ktest_write_read_attr(od, write_buff, false, true, true);
+	if (ret)
+		goto dev_fini;
+
 /* Read with set_attr */
+	ret = ktest_write_read_attr(od, write_buff, true, true, false);
+	if (ret)
+		goto dev_fini;
+
 /* Read with get_attr */
+	ret = ktest_write_read_attr(od, write_buff, true, false, true);
+	if (ret)
+		goto dev_fini;
+
 /* Read with get_attr + set_attr */
+	ret = ktest_write_read_attr(od, write_buff, true, true, true);
+	if (ret)
+		goto dev_fini;
+
 /* remove objects */
 	ret = ktest_remove_obj(od);
 	if (ret)
