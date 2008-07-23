@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# This is the file I use to start | stop iscsi from inside the git source tree
+# This eliminates the need to re-install iscsi after a fresh compilation.
+#
+
+MODDIR="/lib/modules/`uname -r`/kernel/drivers/scsi"
+
+# use iscsi from kernel
+ISCSIMOD=$MODDIR
+
+# use open-iscsi
+#ISCSIMOD="`pwd`"/kernel
+
+if [ `id -u` != 0 ]; then
+	echo "You must be root to run this script!"
+fi
+
+start_iscsi () {
+	echo "Loading SCSI and iSCSI drivers..."
+
+	if [ ! "`lsmod |grep scsi_mod`" ]; then
+		insmod $MODDIR/scsi_mod.ko #|| exit 1
+	fi
+
+	if [ ! "`lsmod | grep sg`" ]; then
+		insmod $MODDIR/sg.ko #|| exit 1
+	fi
+
+	if [ ! "`lsmod |grep scsi_transport_iscsi`" ]; then
+		insmod $ISCSIMOD/scsi_transport_iscsi.ko || exit 1
+	fi
+
+	if [ ! "`lsmod |grep libiscsi`" ]; then
+		insmod $ISCSIMOD/libiscsi.ko || exit 1
+	fi
+
+	if [ ! "`lsmod |grep iscsi_tcp`" ]; then
+		insmod $ISCSIMOD/iscsi_tcp.ko || exit 1
+	fi
+
+	echo "Starting iSCSI daemon..."
+# 	exec ./usr/iscsid -d9 -f &
+	exec ./usr/iscsid -f &
+}
+
+stop_iscsi () {
+	killall -9 iscsid
+	rmmod iscsi_tcp || exit 1
+	rmmod libiscsi || exit 1
+	rmmod scsi_transport_iscsi || exit 1
+# 	rmmod sg || exit 1
+# 	rmmod scsi_mod || exit 1
+}
+
+case "$1" in
+	start)
+		start_iscsi
+	;;
+	stop)
+		stop_iscsi
+	;;
+	*)
+	echo "Usage: ./startup_iscsi {start|stop}"
+	exit 1
+esac
+
+exit 0

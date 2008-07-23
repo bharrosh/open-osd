@@ -1,0 +1,156 @@
+#!/bin/sh
+#
+# how to load> gdb -e ./.build_um/vmlinux
+# in gdb do> run ubd0=/usr0/var/local/um/Fedora7-AMD64-root_fs eth0=tuntap,,,192.168.0.117 mem=256M
+# in gdb do> handle SIGUSR1 pass nostop noprint
+# in gdb do> break sys_init_module (for loading .ko syboles
+# in gdb do> add-symbol-file path-to-.ko-file addar from above ()
+#
+
+# TODO: Edit path to open-iscsi and tools
+OPEN_ISCSI=../open-iscsi
+iscsiadm=$OPEN_ISCSI/usr/iscsiadm
+
+DEV_OSD=/dev/osd0
+
+# TODO: Edit info of your target (only $IP_OSD is used)
+#
+# OSD 2 osc's osd-target
+# SIM=tgtd
+# IQN_OSD=bh-buildlin2.bhalevy.com
+IP_OSD=192.168.0.142:3260
+# IP_OSD=10.64.1.132
+
+# 0SD 1 IBM
+# SIM=ibm-osd-sim
+# IQN_OSD=iqn.2004-11.com.ibm:fb:bh-buildlin2.bhalevy.com
+# IP_OSD=192.168.0.142:3261
+
+do_cmd()
+{
+	$* 2>&1 | logger &
+}
+
+start_sim()
+{
+# FIXME: We want output to go to the other terminal we could
+#	do less some_file in the other consul and rederect
+#	here to some_file
+	prompt "start target_simulator in other terminal"
+}
+stop_sim()
+{
+	prompt "Stop! target_simulator in other terminal"
+}
+
+start_iscsi_intiator()
+{
+        pushd $OPEN_ISCSI/
+        do_cmd utils/iscsi-initiator start
+        popd
+}
+stop_iscsi_intiator()
+{
+        pushd $OPEN_ISCSI/
+        do_cmd utils/iscsi-initiator stop
+        popd
+}
+
+start_open_osd()
+{
+	do_cmd insmod ./drivers/scsi/osd/libosd.ko
+	do_cmd insmod ./drivers/scsi/osd/osd.ko
+	do_cmd insmod ./drivers/scsi/osd/osd_ktests.ko
+}
+stop_open_osd()
+{
+	rmmod osd_ktests
+	rmmod osd
+	rmmod libosd
+}
+
+# ISCSI_DBG=--debug=8
+login_iscsi_osd()
+{
+	echo login into: $IP_OSD
+	do_cmd $iscsiadm $ISCSI_DBG -m discovery -t sendtargets -p $IP_OSD --login
+}
+logout_iscsi_osd()
+{
+	do_cmd $iscsiadm -m node -p $IP_OSD --logout
+}
+
+test_osd()
+{
+	./usr/osd_test --kernel=1 --usrlib=1 $DEV_OSD
+# 	./usr/osd_test --kernel=0 --usrlib=1 $DEV_OSD
+# 	./usr/osd_test --kernel=1 --usrlib=0 $DEV_OSD
+}
+
+run_exofs()
+{
+	./do-exofs format_start
+}
+
+prompt()
+{
+	read -p "$* >>> "
+}
+
+case $1 in
+stop)
+	echo $0 Stopping | logger
+
+	prompt stop_sim
+	stop_sim
+
+	prompt logout_iscsi_osd
+	logout_iscsi_osd
+
+	prompt stop_iscsi_intiator
+	stop_iscsi_intiator
+
+	prompt stop_open_osd
+	stop_open_osd
+
+	prompt done
+	echo $0 Stopped | logger
+	;;
+
+test)
+	for i in {0..57};
+		do echo $i;
+		test_osd;
+	done
+	;;
+
+login)
+	prompt login_iscsi_osd
+	login_iscsi_osd
+	;;
+
+*)
+	echo $0 Starting | logger
+
+	prompt start_sim
+	start_sim
+
+	prompt start_iscsi_intiator
+	start_iscsi_intiator
+
+	prompt start_open_osd
+	start_open_osd
+
+	prompt login_iscsi_osd
+	login_iscsi_osd
+
+	prompt test_osd
+	test_osd
+
+	prompt run_exofs
+	run_exofs
+
+	prompt done
+	echo $0 Initialized | logger
+	;;
+esac
