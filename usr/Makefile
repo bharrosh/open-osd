@@ -15,6 +15,7 @@
 LIB_INC=../include
 # path for source files common with kernel library
 SRC_PATH=../drivers/scsi/osd
+EXOFS_PATH=../fs/exofs
 
 DEPEND=.dependencies
 
@@ -23,6 +24,7 @@ DEFINES=-DCONFIG_SCSI_OSD_DPRINT_SENSE=1
 # DEFINES+=-DCONFIG_SCSI_OSD_DEBUG=y
 
 INCLUDES= -I$(LIB_INC) -I$(LIB_INC)/open-osd/ -I../lib -I./ -I$(SRC_PATH)
+INCLUDES+= -I$(EXOFS_PATH)
 
 CWARN := -Wall -W -Wwrite-strings \
 	-Wundef -Wmissing-prototypes \
@@ -34,7 +36,7 @@ CFLAGS = -fPIC $(CWARN) $(INCLUDES) $(DEFINES)
 
 OSD_LIBS=-L../lib -losd
 
-ALL = osd_test
+ALL = osd_test mkfs.exofs
 all: $(DEPEND) $(ALL)
 
 clean: $(ALL:=_clean)
@@ -57,6 +59,24 @@ osd_test_clean:
 	rm -vf $(OT_COMMON_OBJ:.o=.c)
 
 $(DEPEND): $(OT_COMMON_OBJ:.o=.c) $(OT_OBJ:.o=.c)
+
+# =============== mkexofs ======================================================
+mkfs_COMMON_OBJ=osd.o
+mkfs_OBJ=mkexofs_main.o mkexofs.o
+
+# add for mkexofs debugging
+# CFLAGS += -DCONFIG_MKEXOFS_DEBUG
+
+osd.c:
+	ln -sf $(EXOFS_PATH)/osd.c
+
+mkfs.exofs:  $(mkfs_OBJ) $(mkfs_COMMON_OBJ)
+	$(CC) -o $@ $^ $(OSD_LIBS)
+
+mkfs.exofs_clean:
+	rm -vf $(mkfs_COMMON_OBJ:.o=.c)
+
+$(DEPEND): $(mkfs_COMMON_OBJ:.o=.c) $(mkfs_OBJ:.o=.c)
 
 # =============== common rules =================================================
 # every thing should compile if Makefile changed
