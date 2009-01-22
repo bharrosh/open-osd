@@ -1,8 +1,9 @@
 OSD_INC=`pwd`/include
 LIBOSD=drivers/scsi/osd
+EXOFS=fs/exofs
 
 # Kbuild part (Embeded in this Makefile)
-obj-m := $(LIBOSD)/
+obj-m := $(LIBOSD)/ $(EXOFS)/
 
 # Makefile for out-of-tree builds
 KSRC ?= /lib/modules/$(shell uname -r)/build
