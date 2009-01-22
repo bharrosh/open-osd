@@ -1,0 +1,127 @@
+#!/bin/bash
+#
+
+OO_ROOT=`dirname $0`
+EXOFS_DIR=$OO_ROOT/fs/exofs
+USR_DIR=$OO_ROOT/usr
+MOUNTDIR=/mnt/osd0
+DEV_OSD=/dev/osd0
+PID=0x10000
+FORMAT_SIZE=0
+
+export LD_LIBRARY_PATH=$OO_ROOT/lib
+
+do_cmd()
+{
+	$* 2>&1 | logger -t `basename $1` &
+}
+
+prompt()
+{
+	read -p "$* >>> "
+}
+
+start_exofs()
+{
+	insmod $EXOFS_DIR/exofs.ko
+	add-symbol-file $EXOFS_DIR/exofs.ko
+}
+
+stop_exofs()
+{
+	rmmod exofs
+}
+
+start_mount()
+{
+	OPT="pid=$PID"
+
+	mount -t exofs -o $OPT $DEV_OSD $MOUNTDIR < $DEV_OSD
+}
+
+stop_mount()
+{
+	umount $MOUNTDIR
+}
+
+mkexofs_format()
+{
+	$USR_DIR/mkfs.exofs --pid=$PID --format=$FORMAT_SIZE $DEV_OSD
+}
+
+exofs_hello_world()
+{
+	echo hello > $MOUNTDIR/world
+	cat $MOUNTDIR/world
+}
+
+case $1 in
+stop)
+	echo $0 Stopping | logger
+
+	prompt stop_mount
+	stop_mount
+
+	prompt stop_exofs
+	stop_exofs
+
+	echo $0 Stopped | logger
+	;;
+
+test)
+
+# TODO: Write lots of tests here
+# exofs_hello_world && rm $MOUNTDIR/world;
+# cp a kernel-git-tree, edit, git-diff
+# unmount, mount, diff-with-original-tree
+# compile kernel
+# ...
+	;;
+
+format)
+	prompt mkexofs_format
+	mkexofs_format
+	;;
+
+format_start)
+	echo $0 Starting | logger
+
+	prompt start_exofs
+	start_exofs
+
+	prompt mkexofs_format
+	mkexofs_format
+
+	prompt start_mount
+	start_mount
+
+	prompt exofs_hello_world
+	exofs_hello_world
+
+	echo $0 Initialized | logger
+	;;
+restart)
+	echo $0 restart | logger
+
+	prompt stop_exofs
+	stop_mount
+	stop_exofs
+
+	prompt start_exofs
+	start_exofs
+	start_mount
+
+	echo $0 restart | logger
+	;;
+*)
+	echo $0 Starting | logger
+
+	prompt start_exofs
+	start_exofs
+
+	prompt start_mount
+	start_mount
+
+	echo $0 Initialized | logger
+	;;
+esac
