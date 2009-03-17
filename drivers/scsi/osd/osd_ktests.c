@@ -158,12 +158,10 @@ static int ktest_creat_obj(struct osd_dev *osd_dev)
 
 static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff)
 {
-	struct request_queue *req_q = osd_dev->scsi_device->request_queue;
 	struct osd_request *or;
 	u8 g_caps[OSD_CAP_LEN];
 	int ret;
 	int p, o; u64 offset = 0;
-	struct bio *write_bio;
 
 	for (p = 0; p < num_partitions; p++)
 		for (o = 0; o < num_objects; o++) {
@@ -173,16 +171,14 @@ static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff)
 			};
 
 			KTEST_START_REQ(osd_dev, or);
-			write_bio = bio_map_kern(req_q, write_buff,
-						 BUFF_SIZE, GFP_KERNEL);
-			if (!write_bio) {
-				OSD_ERR("!!! Failed to allocate write BIO\n");
-				return -ENOMEM;
+			ret = osd_req_write_kern(or, &obj, offset,
+					   write_buff, BUFF_SIZE);
+			if (ret) {
+				OSD_ERR("!!! Failed osd_req_write_kern\n");
+				return ret;
 			}
 
-			osd_req_write(or, &obj, write_bio, offset);
 			KTEST_EXEC_END(or, &obj, g_caps, "write");
-			write_bio = NULL; /* released by scsi_midlayer */
 			offset += BUFF_SIZE;
 		}
 
@@ -191,12 +187,10 @@ static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff)
 
 static int ktest_read_obj(struct osd_dev *osd_dev, void *write_buff, void *read_buff)
 {
-	struct request_queue *req_q = osd_dev->scsi_device->request_queue;
 	struct osd_request *or;
 	u8 g_caps[OSD_CAP_LEN];
 	int ret;
 	int p, o; u64 offset = 0;
-	struct bio *read_bio;
 
 	for (p = 0; p < num_partitions; p++)
 		for (o = 0; o < num_objects; o++) {
@@ -206,16 +200,14 @@ static int ktest_read_obj(struct osd_dev *osd_dev, void *write_buff, void *read_
 			};
 
 			KTEST_START_REQ(osd_dev, or);
-			read_bio = bio_map_kern(req_q, read_buff,
-						BUFF_SIZE, GFP_KERNEL);
-			if (!read_bio) {
-				OSD_ERR("!!! Failed to allocate read BIO\n");
-				return -ENOMEM;
+			ret = osd_req_read_kern(or, &obj, offset,
+					  read_buff, BUFF_SIZE);
+			if (ret) {
+				OSD_ERR("!!! Failed osd_req_read_kern\n");
+				return ret;
 			}
 
-			osd_req_read(or, &obj, read_bio, offset);
 			KTEST_EXEC_END(or, &obj, g_caps, "read");
-			read_bio = NULL;
 			if (memcmp(read_buff, write_buff, BUFF_SIZE))
 				OSD_ERR("!!! Read did not compare\n");
 			offset += BUFF_SIZE;
@@ -270,11 +262,9 @@ static int ktest_remove_par(struct osd_dev *osd_dev)
 static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 	bool doread, bool doset, bool doget)
 {
-	struct request_queue *req_q = osd_dev->scsi_device->request_queue;
 	struct osd_request *or;
 	char g_caps[OSD_CAP_LEN];
 	int ret;
-	struct bio *bio;
 	const char *domsg;
 	/* set attrs */
 	static char name[] = "ktest_write_read_attr";
@@ -297,18 +287,18 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 	};
 
 	KTEST_START_REQ(osd_dev, or);
-	bio = bio_map_kern(req_q, buff, BUFF_SIZE, GFP_KERNEL);
-	if (!bio) {
-		OSD_ERR("!!! Failed to allocate BIO\n");
-		return -ENOMEM;
-	}
 
 	if (doread) {
-		osd_req_read(or, &obj, bio, 0);
+		ret = osd_req_read_kern(or, &obj, 0, buff, BUFF_SIZE);
 		domsg = "Read-with-attr";
 	} else {
-		osd_req_write(or, &obj, bio, 0);
+		ret = osd_req_write_kern(or, &obj, 0, buff, BUFF_SIZE);
 		domsg = "Write-with-attr";
+	}
+
+	if (ret) {
+		OSD_ERR("!!! Failed on osd_req_read/write_kern\n");
+		return ret;
 	}
 
 	if (doset)
