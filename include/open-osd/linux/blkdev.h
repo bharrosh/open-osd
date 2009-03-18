@@ -53,6 +53,8 @@ enum {
 	WRITE = 1,
 };
 
+#define bio_rw_flagged(bio, flag)	((bio)->bi_rw & (1 << (flag)))
+
 void bio_put(struct bio *bio);
 void bio_endio(struct bio *bio, int error);
 struct bio *bio_map_kern(
@@ -107,6 +109,8 @@ static inline unsigned int blk_rq_bytes(struct request *rq)
 int blk_end_request(struct request *rq, int error, unsigned int nr_bytes);
 int blk_rq_append_bio(struct request_queue *q, struct request *rq,
 		      struct bio *bio);
+int blk_rq_map_kern(struct request_queue *q, struct request *rq, void *kbuf,
+		    unsigned int len, gfp_t gfp_mask);
 int blk_execute_rq(struct request_queue *q, void *bd_disk_unused,
 		   struct request *rq, int at_head);
 void blk_execute_rq_nowait(struct request_queue *q, void *bd_disk_unused,

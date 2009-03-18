@@ -353,6 +353,16 @@ int blk_rq_append_bio(struct request_queue *q __unused, struct request *rq,
 	return ret;
 }
 
+int blk_rq_map_kern(struct request_queue *q, struct request *rq, void *kbuf,
+		    unsigned int len, gfp_t gfp_mask)
+{
+	struct bio *bio = bio_map_kern(q, kbuf, len, gfp_mask);
+	if (!bio)
+		return -ENOMEM;
+
+	return blk_rq_append_bio(q, rq, bio);
+}
+
 static void __end_io(struct request *rq, struct sg_io_v4 *sg)
 {
 	_blk_end_request(rq, 0);
