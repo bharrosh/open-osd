@@ -7,10 +7,11 @@
 # in gdb do> add-symbol-file path-to-.ko-file addar from above ()
 #
 
-# TODO: Edit path to open-iscsi and tools
-OPEN_ISCSI=../open-iscsi
-iscsiadm=$OPEN_ISCSI/usr/iscsiadm
+# OPEN_ISCSI=../open-iscsi
+# iscsiadm=$OPEN_ISCSI/usr/iscsiadm
+iscsiadm=iscsiadm
 
+# TODO: edit path to osd device
 DEV_OSD=/dev/osd0
 
 # TODO: Edit info of your target (only $IP_OSD is used)
@@ -18,8 +19,11 @@ DEV_OSD=/dev/osd0
 # OSD 2 osc's osd-target
 # SIM=tgtd
 # IQN_OSD=bh-buildlin2.bhalevy.com
-IP_OSD=192.168.0.142:3260
-# IP_OSD=10.64.1.132
+# IP_OSD=192.168.0.142:3260	# buildlin2
+
+IP_OSD=192.168.0.241:3260	# testlin1
+# IP_OSD=192.168.0.242:3260	# testlin2
+# IP_OSD=10.64.1.132 		# pref-x4
 
 # 0SD 1 IBM
 # SIM=ibm-osd-sim
@@ -45,22 +49,44 @@ stop_sim()
 
 start_iscsi_intiator()
 {
-        pushd $OPEN_ISCSI/
-        do_cmd utils/iscsi-initiator start
-        popd
+# 	pushd $OPEN_ISCSI/
+# 	do_cmd utils/iscsi-initiator start
+# 	popd
+# 
+# 	until cat /sys/class/iscsi_transport/tcp/handle 2>/dev/null ; do
+# 		sleep 1;
+# 	done
+
+	if ! service iscsi status; then
+		do_cmd service iscsi start ;
+
+		until cat /sys/class/iscsi_transport/tcp/handle 2>/dev/null ; do
+			sleep 1;
+		done
+	fi
 }
+
 stop_iscsi_intiator()
 {
-        pushd $OPEN_ISCSI/
-        do_cmd utils/iscsi-initiator stop
-        popd
+# 	pushd $OPEN_ISCSI/
+# 	do_cmd utils/iscsi-initiator stop
+# 	popd
+
+	do_cmd service iscsi stop
+
+	until [ -n `modprobe -l scsi_transport_iscsi` ]; do
+		sleep 1;
+	done
 }
 
 start_open_osd()
 {
-	do_cmd insmod ./drivers/scsi/osd/libosd.ko
-	do_cmd insmod ./drivers/scsi/osd/osd.ko
-	do_cmd insmod ./drivers/scsi/osd/osd_ktests.ko
+	until insmod ./drivers/scsi/osd/libosd.ko; do sleep 1; done
+# 	do_cmd insmod ./drivers/scsi/osd/libosd.ko
+	until insmod ./drivers/scsi/osd/osd.ko; do sleep 1; done
+# 	do_cmd insmod ./drivers/scsi/osd/osd.ko
+	until insmod ./drivers/scsi/osd/osd_ktests.ko; do sleep 1; done
+# 	do_cmd insmod ./drivers/scsi/osd/osd_tests.ko
 }
 stop_open_osd()
 {
@@ -73,11 +99,18 @@ stop_open_osd()
 login_iscsi_osd()
 {
 	echo login into: $IP_OSD
-	do_cmd $iscsiadm $ISCSI_DBG -m discovery -t sendtargets -p $IP_OSD --login
+	until $iscsiadm $ISCSI_DBG -m discovery -t sendtargets -p $IP_OSD --login; do 
+		sleep 1; 
+	done
+
+	until ls $DEV_OSD 2>/dev/null; do sleep 1; done
 }
 logout_iscsi_osd()
 {
 	do_cmd $iscsiadm -m node -p $IP_OSD --logout
+
+	while ls $DEV_OSD 2>/dev/null; do sleep 1; done
+	sleep 1;
 }
 
 test_osd()
@@ -101,47 +134,41 @@ case $1 in
 stop)
 	echo $0 Stopping | logger
 
-	prompt stop_sim
-	stop_sim
-
-	prompt logout_iscsi_osd
 	logout_iscsi_osd
 
-	prompt stop_iscsi_intiator
 	stop_iscsi_intiator
 
-	prompt stop_open_osd
 	stop_open_osd
 
-	prompt done
+# 	stop_sim
+
 	echo $0 Stopped | logger
 	;;
 
 test)
-	for i in {0..57};
-		do echo $i;
-		test_osd;
+	until [ -n `modprobe -l scsi_transport_iscsi` ]; do
+		echo modprobe -l scsi_transport_iscsi;
+		sleep 1;
 	done
 	;;
 
 login)
-	prompt login_iscsi_osd
 	login_iscsi_osd
+	;;
+
+logout)
+	logout_iscsi_osd
 	;;
 
 *)
 	echo $0 Starting | logger
 
-	prompt start_sim
-	start_sim
+# 	start_sim
 
-	prompt start_iscsi_intiator
 	start_iscsi_intiator
 
-	prompt start_open_osd
 	start_open_osd
 
-	prompt login_iscsi_osd
 	login_iscsi_osd
 
 	prompt test_osd
@@ -150,7 +177,6 @@ login)
 	prompt run_exofs
 	run_exofs
 
-	prompt done
 	echo $0 Initialized | logger
 	;;
 esac
