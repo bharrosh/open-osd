@@ -2,7 +2,7 @@
 # the out-of-tree open-osd projects.
 
 # TODO: Edit the path to your kernel tree
-KER_DIR=$(PWD)/linux
+KER_DIR=$(PWD)/linux-open-osd
 # KER_DIR ?= /lib/modules/$(shell uname -r)/build
 
 # TODO: Edit the path to open-osd
@@ -10,8 +10,10 @@ OSD_SRC=open-osd/
 
 ARCH ?= `uname -i`
 
-KBUILD_OUTPUT=.build_$(ARCH)
-K_PARAMS=ARCH=$(ARCH) KBUILD_OUTPUT=$(KBUILD_OUTPUT)
+# KBUILD_OUTPUT=.build_$(ARCH)
+# K_PARAMS=ARCH=$(ARCH) KBUILD_OUTPUT=$(KBUILD_OUTPUT)
+
+K_PARAMS=ARCH=$(ARCH)
 
 ALL=linux osd
 all: $(ALL)
