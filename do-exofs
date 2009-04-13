@@ -9,6 +9,8 @@ DEV_OSD=/dev/osd0
 PID=0x10000
 FORMAT_SIZE=0
 
+MNT_PNFS=/mnt/pnfs
+
 export LD_LIBRARY_PATH=$OO_ROOT/lib
 
 do_cmd()
@@ -23,20 +25,22 @@ prompt()
 
 start_exofs()
 {
-	insmod $EXOFS_DIR/exofs.ko
-	add-symbol-file $EXOFS_DIR/exofs.ko
+# 	insmod $EXOFS_DIR/exofs.ko
+	modprobe exofs
+# 	add-symbol-file $EXOFS_DIR/exofs.ko
 }
 
 stop_exofs()
 {
-	rmmod exofs
+# 	rmmod exofs
+	modprobe --remove exofs
 }
 
 start_mount()
 {
-	OPT="pid=$PID"
+	OPT="pid=$PID,_netdev"
 
-	mount -t exofs -o $OPT $DEV_OSD $MOUNTDIR < $DEV_OSD
+	mount -t exofs -o $OPT $DEV_OSD $MOUNTDIR
 }
 
 stop_mount()
@@ -55,32 +59,78 @@ exofs_hello_world()
 	cat $MOUNTDIR/world
 }
 
+do_pnfs_start()
+{
+	service nfs start
+
+#	echo $((0x7fff)) > /proc/sys/sunrpc/nfs_debug
+#	echo $((0x7fff)) > /proc/sys/sunrpc/nfsd_debug
+	nfsdbg
+	modprobe objlayoutdriver
+
+# 	mount -t nfs4 -o minorversion=1 localhost:/ $MNT_PNFS
+}
+
+do_pnfs_stop()
+{
+	umount $MNT_PNFS
+	modprobe --remove objlayoutdriver
+	service nfs stop
+}
+
+cthon_test()
+{
+	cd /home/bharrosh/dev/git/pub/tests/cthon04-nfs41
+	umount /mnt/localhost
+	./server -a -p / localhost
+}
+
+dd_test()
+{
+	dd if=/dev/zero of=$MNT_PNFS/dd bs=4M count=1
+}
+
 case $1 in
+start)
+	echo $0 Starting | logger
+
+	start_exofs
+	start_mount
+
+	echo $0 Initialized | logger
+	;;
+
 stop)
 	echo $0 Stopping | logger
 
-	prompt stop_mount
 	stop_mount
-
-	prompt stop_exofs
 	stop_exofs
 
 	echo $0 Stopped | logger
 	;;
 
-test)
+restart)
+	echo $0 restart | logger
 
-# TODO: Write lots of tests here
-# exofs_hello_world && rm $MOUNTDIR/world;
-# cp a kernel-git-tree, edit, git-diff
-# unmount, mount, diff-with-original-tree
-# compile kernel
-# ...
+	prompt stop_exofs
+	stop_mount
+	stop_exofs
+
+	prompt start_exofs
+	start_exofs
+	start_mount
+
+	echo $0 restart | logger
+	;;
+
+test)
+	cthon_test
 	;;
 
 format)
 	prompt mkexofs_format
 	mkexofs_format
+	echo $0 format | logger
 	;;
 
 format_start)
@@ -98,30 +148,16 @@ format_start)
 	prompt exofs_hello_world
 	exofs_hello_world
 
-	echo $0 Initialized | logger
+	echo $0 format_start | logger
 	;;
-restart)
-	echo $0 restart | logger
 
-	prompt stop_exofs
-	stop_mount
-	stop_exofs
-
-	prompt start_exofs
-	start_exofs
-	start_mount
-
-	echo $0 restart | logger
+pnfs_start)
+	do_pnfs_start
+	echo $0 pnfs_start | logger
 	;;
-*)
-	echo $0 Starting | logger
 
-	prompt start_exofs
-	start_exofs
-
-	prompt start_mount
-	start_mount
-
-	echo $0 Initialized | logger
+pnfs_stop)
+	do_pnfs_stop
+	echo $0 pnfs_stop | logger
 	;;
 esac
