@@ -65,8 +65,20 @@ const unsigned BUFF_SIZE = 4 * K;
 const int num_partitions = 1;
 const int num_objects = 2; /* per partition */
 
-static int test_exec(struct osd_request *or, void *caps,
-		     const struct osd_obj_id *obj)
+static struct osd_request *_start_request(struct osd_dev *od,
+					  const char *func, int line)
+{
+	struct osd_request *or = osd_start_request(od, GFP_KERNEL);
+
+	if (unlikely(!or)) {
+		OSD_ERR("Error @%s:%d: osd_start_request\n", func, line);
+		return NULL;
+	}
+	return or;
+}
+
+static int _exec(struct osd_request *or, const struct osd_obj_id *obj,
+		 u8 *caps, const char *msg)
 {
 	int ret;
 	struct osd_sense_info osi;
@@ -74,49 +86,43 @@ static int test_exec(struct osd_request *or, void *caps,
 	osd_sec_init_nosec_doall_caps(caps, obj, false, true);
 	ret = osd_finalize_request(or, 0, caps, NULL);
 	if (ret)
-		return ret;
+		goto out;
 
-	ret = osd_execute_request(or);
-	osd_req_decode_sense(or, &osi);
+	osd_execute_request(or);
+	ret = osd_req_decode_sense(or, &osi);
+	osd_end_request(or);
+
+out:
+	if (msg) {
+		if (!ret)
+			OSD_INFO("%s\n", msg);
+		else
+			OSD_ERR("Error executing %s => %d\n", msg, ret);
+	}
+
 	return ret;
 }
-
-#define KTEST_START_REQ(osd_dev, or) do { \
-	or = osd_start_request(osd_dev, GFP_KERNEL); \
-	if (!or) { \
-		OSD_ERR("Error @%s:%d: osd_start_request\n", __func__,\
-			__LINE__); \
-		return -ENOMEM; \
-	} \
-} while (0)
-
-#define KTEST_EXEC_END(or, obj, g_caps, msg) do { \
-	ret = test_exec(or, g_caps, obj); \
-	osd_end_request(or); \
-	if (ret) { \
-		OSD_ERR("Error executing "msg" => %d\n", ret); \
-		return ret; \
-	} \
-	OSD_DEBUG(msg "\n"); \
-} while (0)
 
 static int ktest_format(struct osd_dev *osd_dev)
 {
 	struct osd_request *or;
-	u8 g_caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 
-	KTEST_START_REQ(osd_dev, or);
+	or = _start_request(osd_dev, __func__, __LINE__);
+	if (!or)
+		return -ENOMEM;
+
 	or->timeout *= 10;
 	osd_req_format(or, format_total_capacity);
-	KTEST_EXEC_END(or, &osd_root_object, g_caps, "format");
-	return 0;
+	ret = _exec(or, &osd_root_object, caps, "format");
+	return ret;
 }
 
 static int ktest_creat_par(struct osd_dev *osd_dev)
 {
 	struct osd_request *or;
-	u8 g_caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 	int p;
 
@@ -126,9 +132,14 @@ static int ktest_creat_par(struct osd_dev *osd_dev)
 			.id = 0
 		};
 
-		KTEST_START_REQ(osd_dev, or);
+		or = _start_request(osd_dev, __func__, __LINE__);
+		if (!or)
+			return -ENOMEM;
+
 		osd_req_create_partition(or, par.partition);
-		KTEST_EXEC_END(or, &par, g_caps, "create_partition");
+		ret = _exec(or, &par, caps, "create_partition");
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -137,7 +148,7 @@ static int ktest_creat_par(struct osd_dev *osd_dev)
 static int ktest_creat_obj(struct osd_dev *osd_dev)
 {
 	struct osd_request *or;
-	u8 g_caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 	int p, o;
 
@@ -148,18 +159,24 @@ static int ktest_creat_obj(struct osd_dev *osd_dev)
 				.id = first_obj_id + o
 			};
 
-			KTEST_START_REQ(osd_dev, or);
+			or = _start_request(osd_dev, __func__, __LINE__);
+			if (!or)
+				return -ENOMEM;
+
 			osd_req_create_object(or, &obj);
-			KTEST_EXEC_END(or, &obj, g_caps, "create_object");
+			ret = _exec(or, &obj, caps, "create_object");
+			if (ret)
+				return ret;
 		}
 
 	return 0;
 }
 
-static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff)
+static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff,
+			   bool will_fail)
 {
 	struct osd_request *or;
-	u8 g_caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 	int p, o; u64 offset = 0;
 
@@ -170,7 +187,10 @@ static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff)
 				.id = first_obj_id + o
 			};
 
-			KTEST_START_REQ(osd_dev, or);
+			or = _start_request(osd_dev, __func__, __LINE__);
+			if (!or)
+				return -ENOMEM;
+
 			ret = osd_req_write_kern(or, &obj, offset,
 					   write_buff, BUFF_SIZE);
 			if (ret) {
@@ -178,7 +198,10 @@ static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff)
 				return ret;
 			}
 
-			KTEST_EXEC_END(or, &obj, g_caps, "write");
+			ret = _exec(or, &obj, caps, will_fail ? NULL : "write");
+			if (ret)
+				return ret;
+
 			offset += BUFF_SIZE;
 		}
 
@@ -188,7 +211,7 @@ static int ktest_write_obj(struct osd_dev *osd_dev, void *write_buff)
 static int ktest_read_obj(struct osd_dev *osd_dev, void *write_buff, void *read_buff)
 {
 	struct osd_request *or;
-	u8 g_caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 	int p, o; u64 offset = 0;
 
@@ -199,7 +222,10 @@ static int ktest_read_obj(struct osd_dev *osd_dev, void *write_buff, void *read_
 				.id = first_obj_id + o
 			};
 
-			KTEST_START_REQ(osd_dev, or);
+			or = _start_request(osd_dev, __func__, __LINE__);
+			if (!or)
+				return -ENOMEM;
+
 			ret = osd_req_read_kern(or, &obj, offset,
 					  read_buff, BUFF_SIZE);
 			if (ret) {
@@ -207,7 +233,10 @@ static int ktest_read_obj(struct osd_dev *osd_dev, void *write_buff, void *read_
 				return ret;
 			}
 
-			KTEST_EXEC_END(or, &obj, g_caps, "read");
+			ret = _exec(or, &obj, caps, "read");
+			if (ret)
+				return ret;
+
 			if (memcmp(read_buff, write_buff, BUFF_SIZE))
 				OSD_ERR("!!! Read did not compare\n");
 			offset += BUFF_SIZE;
@@ -219,7 +248,7 @@ static int ktest_read_obj(struct osd_dev *osd_dev, void *write_buff, void *read_
 static int ktest_remove_obj(struct osd_dev *osd_dev)
 {
 	struct osd_request *or;
-	u8 g_caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 	int p, o;
 
@@ -230,9 +259,14 @@ static int ktest_remove_obj(struct osd_dev *osd_dev)
 				.id = first_obj_id + o
 			};
 
-			KTEST_START_REQ(osd_dev, or);
+			or = _start_request(osd_dev, __func__, __LINE__);
+			if (!or)
+				return -ENOMEM;
+
 			osd_req_remove_object(or, &obj);
-			KTEST_EXEC_END(or, &obj, g_caps, "remove_object");
+			ret = _exec(or, &obj, caps, "remove_object");
+			if (ret)
+				return ret;
 		}
 
 	return 0;
@@ -241,7 +275,7 @@ static int ktest_remove_obj(struct osd_dev *osd_dev)
 static int ktest_remove_par(struct osd_dev *osd_dev)
 {
 	struct osd_request *or;
-	u8 g_caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 	int p;
 
@@ -251,9 +285,14 @@ static int ktest_remove_par(struct osd_dev *osd_dev)
 			.id = 0
 		};
 
-		KTEST_START_REQ(osd_dev, or);
+		or = _start_request(osd_dev, __func__, __LINE__);
+		if (!or)
+			return -ENOMEM;
+
 		osd_req_remove_partition(or, par.partition);
-		KTEST_EXEC_END(or, &par, g_caps, "remove_partition");
+		ret = _exec(or, &par, caps, "remove_partition");
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -263,7 +302,8 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 	bool doread, bool doset, bool doget)
 {
 	struct osd_request *or;
-	char g_caps[OSD_CAP_LEN];
+	struct osd_sense_info osi;
+	char caps[OSD_CAP_LEN];
 	int ret;
 	const char *domsg;
 	/* set attrs */
@@ -286,7 +326,9 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 			OSD_ATTR_OI_LOGICAL_LENGTH, sizeof(__be64)),
 	};
 
-	KTEST_START_REQ(osd_dev, or);
+	or = _start_request(osd_dev, __func__, __LINE__);
+	if (!or)
+		return -ENOMEM;
 
 	if (doread) {
 		ret = osd_req_read_kern(or, &obj, 0, buff, BUFF_SIZE);
@@ -306,7 +348,13 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 	if (doget)
 		osd_req_add_get_attr_list(or, get_attrs, 2);
 
-	ret = test_exec(or, g_caps, &obj);
+	osd_sec_init_nosec_doall_caps(caps, &obj, false, true);
+	ret = osd_finalize_request(or, 0, caps, NULL);
+	if (ret)
+		goto out;
+
+	osd_execute_request(or);
+	ret = osd_req_decode_sense(or, &osi);
 	if (!ret && doget) {
 		void *iter = NULL, *pFirst, *pSec;
 		int nelem = 2;
@@ -330,13 +378,13 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 			domsg, _LLU(capacity_len), _LLU(logical_len));
 	}
 
+out:
 	osd_end_request(or);
 	if (ret) {
 		OSD_ERR("!!! Error executing %s => %d doset=%d doget=%d\n",
 			domsg, ret, doset, doget);
 		return ret;
 	}
-	OSD_DEBUG("%s\n", domsg);
 
 	return 0;
 }
@@ -346,19 +394,22 @@ int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 {
 	void *write_buff = NULL;
 	void *read_buff = NULL;
-	int ret = -ENOMEM;
+	int ret;
 	unsigned i;
 
 /* osd_format */
-	if (ktest_format(od))
+	ret = ktest_format(od);
+	if (ret)
 		goto dev_fini;
 
 /* create some partition */
-	if (ktest_creat_par(od))
+	ret = ktest_creat_par(od);
+	if (ret)
 		goto dev_fini;
 /* list partition see if they're all there */
 /* create some objects on some partitions */
-	if (ktest_creat_obj(od))
+	ret = ktest_creat_obj(od);
+	if (ret)
 		goto dev_fini;
 
 /* Alloc some buffers and bios */
@@ -368,6 +419,7 @@ int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 	read_buff = (void *)__get_free_page(GFP_KERNEL);
 	if (!write_buff || !read_buff) {
 		OSD_ERR("!!! Failed to allocate memory for test\n");
+		ret = -ENOMEM;
 		goto dev_fini;
 	}
 	for (i = 0; i < BUFF_SIZE / 4; i++)
@@ -375,7 +427,7 @@ int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 	OSD_DEBUG("allocate buffers\n");
 
 /* write to objects */
-	ret = ktest_write_obj(od, write_buff);
+	ret = ktest_write_obj(od, write_buff, false);
 	if (ret)
 		goto dev_fini;
 
@@ -427,10 +479,11 @@ int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 		goto dev_fini;
 
 /* Error to test sense handling */
-	ret = ktest_write_obj(od, write_buff);
+	ret = ktest_write_obj(od, write_buff, true);
 	if (!ret) {
-		OSD_INFO("Error was expected written to none existing object\n");
+		OSD_ERR("Error was expected written to none existing object\n");
 		ret = -EIO;
+		goto dev_fini;
 	} else
 		ret =  0; /* good this test should fail */
 
