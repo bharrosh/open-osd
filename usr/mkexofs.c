@@ -2,9 +2,7 @@
  * mkexofs.c - make an exofs file system.
  *
  * Copyright (C) 2005, 2006
- * Avishay Traeger (avishay@gmail.com) (avishay@il.ibm.com)
- * Copyright (C) 2005, 2006
- * International Business Machines
+ * Avishay Traeger (avishay@gmail.com)
  * Copyright (C) 2008, 2009
  * Boaz Harrosh <bharrosh@panasas.com>
  *
