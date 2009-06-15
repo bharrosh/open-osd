@@ -357,7 +357,7 @@ static void __end_io(struct request *rq, struct sg_io_v4 *sg)
 {
 	_blk_end_request(rq, 0);
 
-	rq->resid = sg->din_resid;
+	rq->resid_len = sg->din_resid;
 	rq->errors = (sg->device_status << 1) | (sg->transport_status << 16) |
 			(sg->driver_status << 24);
 	rq->sense_len = sg->response_len;
