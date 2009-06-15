@@ -13,7 +13,7 @@ ARCH ?=
 # this is the basic Kbuild out-of-tree invocation, with the M= option
 KBUILD_BASE = +$(MAKE) -C $(KSRC) M=`pwd` KBUILD_OUTPUT=$(KBUILD_OUTPUT) ARCH=$(ARCH)
 
-all: osd_drivers osd_lib osd_usr
+all: osd_lib osd_usr
 
 clean: osd_drivers_clean osd_lib_clean osd_usr_clean
 
