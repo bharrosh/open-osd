@@ -333,8 +333,8 @@ void blk_put_request(struct request *rq)
 	kfree(rq);
 }
 
-int blk_rq_append_bio(struct request_queue *q __unused, struct request *rq,
-		      struct bio *bio)
+static int blk_rq_append_bio(struct request_queue *q __unused,
+			     struct request *rq, struct bio *bio)
 {
 	int ret;
 

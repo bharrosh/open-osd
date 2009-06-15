@@ -107,8 +107,6 @@ static inline unsigned int blk_rq_bytes(struct request *rq)
 }
 
 int blk_end_request(struct request *rq, int error, unsigned int nr_bytes);
-int blk_rq_append_bio(struct request_queue *q, struct request *rq,
-		      struct bio *bio);
 struct request *blk_make_request(struct request_queue *q, struct bio *bio,
 				 gfp_t gfp_mask);
 int blk_rq_map_kern(struct request_queue *q, struct request *rq, void *kbuf,
