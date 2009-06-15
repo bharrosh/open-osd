@@ -69,6 +69,7 @@ struct request {
 
 	int rw;
 	int cmd_type;
+	int cmd_flags;
 	u8 *cmd;
 	unsigned cmd_len;
 	unsigned int timeout;
@@ -87,6 +88,8 @@ struct request {
 	void* end_io_data;
 	rq_end_io_fn *rq_end_io;
 };
+
+#define REQ_QUIET	(1 << 2)
 
 struct request *blk_get_request(struct request_queue *q, int rw, gfp_t gfp);
 void blk_put_request(struct request *req);
