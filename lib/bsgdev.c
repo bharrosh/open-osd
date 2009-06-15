@@ -250,9 +250,9 @@ static void copy_buff_to_bios(void *buff, struct bio *bio)
 /* must be called before total_len & iovec_count */
 static inline void *_rq_buff(struct request *rq)
 {
-	rq->data_len = _count_vects(rq->bio, &rq->iovec_num);
+	rq->__data_len = _count_vects(rq->bio, &rq->iovec_num);
 
-	if (!rq->data_len)
+	if (!rq->__data_len)
 		return NULL;
 
 	if(__g_using_iovec) {
@@ -266,19 +266,19 @@ static inline void *_rq_buff(struct request *rq)
 	} else if(rq->iovec_num == 1){
 		rq->bounce = rq->bio->bi_vec[0].mem;
 		rq->iovec_num = 0;
-		bsg_dbg("rq->iovec_num == 1 %p %u\n", rq->bounce, rq->data_len);
+		bsg_dbg("rq->iovec_num == 1 %p %u\n", rq->bounce, rq->__data_len);
 	} else {
-		rq->bounce = kalloc(rq->data_len, 0);
+		rq->bounce = kalloc(rq->__data_len, 0);
 		if (_rq_is_write(rq))
 			copy_bios_to_buff(rq->bio, rq->bounce);
-		bsg_dbg("bounce %p %u\n", rq->bounce, rq->data_len);
+		bsg_dbg("bounce %p %u\n", rq->bounce, rq->__data_len);
 	}
 	return rq->bounce;
 }
 
 static inline unsigned _rq_total_len(struct request *rq)
 {
-	return rq->data_len;
+	return rq->__data_len;
 }
 
 static inline unsigned _rq_iovec_count(struct request *rq)
@@ -349,8 +349,20 @@ int blk_rq_append_bio(struct request_queue *q __unused, struct request *rq,
 	} else
 		ret = __bio_append(rq->bio, bio);
 
-	rq->data_len = rq->bio->bi_size;
+	rq->__data_len = rq->bio->bi_size;
 	return ret;
+}
+
+struct request *blk_make_request(struct request_queue *q, struct bio *bio,
+				 gfp_t gfp_mask)
+{
+	struct request *rq = blk_get_request(q, bio_rw_flagged(bio, BIO_RW),
+					     gfp_mask);
+
+	if (rq) {
+		blk_rq_append_bio(q, rq, bio);
+	}
+	return rq;
 }
 
 int blk_rq_map_kern(struct request_queue *q, struct request *rq, void *kbuf,
@@ -367,7 +379,13 @@ static void __end_io(struct request *rq, struct sg_io_v4 *sg)
 {
 	_blk_end_request(rq, 0);
 
-	rq->resid_len = sg->din_resid;
+	if (_rq_is_write(rq)) {
+		rq->resid_len = sg->dout_resid;
+		if (rq->next_rq)
+			rq->next_rq->resid_len = sg->din_resid;
+	} else
+		rq->resid_len = sg->din_resid;
+
 	rq->errors = (sg->device_status << 1) | (sg->transport_status << 16) |
 			(sg->driver_status << 24);
 	rq->sense_len = sg->response_len;

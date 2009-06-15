@@ -77,7 +77,7 @@ struct request {
 	unsigned int timeout;
 	int retries;
 
-	unsigned int data_len;
+	unsigned int __data_len;
 	unsigned int iovec_num;
 	void *iovec; /* sg_iovec */
 	void *bounce; /* linear buffer in case sg_iovec is not supported */
@@ -103,12 +103,14 @@ static inline void __blk_put_request(struct request_queue *q __unused,
 
 static inline unsigned int blk_rq_bytes(struct request *rq)
 {
-	return rq->data_len;
+	return rq->__data_len;
 }
 
 int blk_end_request(struct request *rq, int error, unsigned int nr_bytes);
 int blk_rq_append_bio(struct request_queue *q, struct request *rq,
 		      struct bio *bio);
+struct request *blk_make_request(struct request_queue *q, struct bio *bio,
+				 gfp_t gfp_mask);
 int blk_rq_map_kern(struct request_queue *q, struct request *rq, void *kbuf,
 		    unsigned int len, gfp_t gfp_mask);
 int blk_execute_rq(struct request_queue *q, void *bd_disk_unused,
