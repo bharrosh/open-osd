@@ -36,7 +36,7 @@ CFLAGS = -fPIC $(CWARN) $(INCLUDES) $(DEFINES)
 
 OSD_LIBS=-L../lib -losd
 
-ALL = osd_test mkfs.exofs
+ALL = osd_test mkfs.exofs osdblk
 all: $(DEPEND) $(ALL)
 
 clean: $(ALL:=_clean)
@@ -77,6 +77,16 @@ mkfs.exofs_clean:
 	rm -vf $(mkfs_COMMON_OBJ:.o=.c)
 
 $(DEPEND): $(mkfs_COMMON_OBJ:.o=.c) $(mkfs_OBJ:.o=.c)
+
+# =============== osdblk ======================================================
+osdblk_OBJ=osdblk.o
+
+osdblk:  $(osdblk_OBJ)
+	$(CC) -o $@ $^ $(OSD_LIBS)
+
+osdblk_clean:
+
+$(DEPEND): $(osdblk_OBJ:.o=.c)
 
 # =============== common rules =================================================
 # every thing should compile if Makefile changed
