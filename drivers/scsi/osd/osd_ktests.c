@@ -64,6 +64,7 @@ const unsigned BUFF_SIZE = 4 * K;
 
 const int num_partitions = 1;
 const int num_objects = 2; /* per partition */
+const int num_sg_entries = 4;
 
 static struct osd_request *_start_request(struct osd_dev *od,
 					  const char *func, int line)
@@ -248,6 +249,127 @@ static int ktest_read_obj(struct osd_dev *osd_dev, void *write_buff, void *read_
 			if (memcmp(read_buff, write_buff, BUFF_SIZE))
 				OSD_ERR("!!! Read did not compare\n");
 			offset += BUFF_SIZE;
+		}
+
+	return 0;
+}
+
+static int ktest_write_sg_obj(struct osd_dev *osd_dev, void *write_buff)
+{
+	struct osd_request *or;
+	u8 caps[OSD_CAP_LEN];
+	int ret;
+	int p, o, s; u64 offset = 0;
+	struct osd_sg_entry sglist[num_sg_entries];
+	void *buff[num_sg_entries];
+	u64 segsize = BUFF_SIZE/num_sg_entries;
+
+	/* divide the write_buff into num_sg_entries segments and
+	   write the segments in reverse order to the object */
+	for (s = 0; s < num_sg_entries; s++) {
+		buff[s] = &(((uint8_t *)write_buff)[offset]);
+		offset += segsize;
+		sglist[s].offset = BUFF_SIZE-offset;
+		sglist[s].len = segsize;
+	}
+
+	for (p = 0; p < num_partitions; p++)
+		for (o = 0; o < num_objects; o++) {
+			struct osd_obj_id obj = {
+				.partition = first_par_id + p,
+				.id = first_obj_id + o
+			};
+
+			or = _start_request(osd_dev, __func__, __LINE__);
+			if (!or)
+				return -ENOMEM;
+			ret = osd_req_write_sg_kern(or, &obj, buff, sglist,
+						    num_sg_entries);
+			if (ret) {
+				OSD_ERR("!!! Failed osd_req_write_sg_kern\n");
+				return ret;
+			}
+
+			ret = _exec(or, &obj, caps, "write_sg");
+			if (ret)
+				return ret;
+		}
+
+	return 0;
+}
+
+static int ktest_read_sg_obj(struct osd_dev *osd_dev,
+			     void *write_buff, void *read_buff)
+{
+	struct osd_request *or;
+	u8 caps[OSD_CAP_LEN];
+	int ret;
+	int p, o, i, s; u64 offset = 0;
+	struct osd_sg_entry sglist[num_sg_entries];
+	void *buff[num_sg_entries];
+	u64 segsize = BUFF_SIZE/num_sg_entries;
+
+	/* divide the read_buff into num_sg_entries segments and
+	   read the segments in reverse order from the object */
+	for (s = 0; s < num_sg_entries; s++) {
+		buff[s] = &(((uint8_t *)read_buff)[offset]);
+		offset += segsize;
+		sglist[s].offset = BUFF_SIZE-offset;
+		sglist[s].len = segsize;
+	}
+
+	for (p = 0; p < num_partitions; p++)
+		for (o = 0; o < num_objects; o++) {
+			struct osd_obj_id obj = {
+				.partition = first_par_id + p,
+				.id = first_obj_id + o
+			};
+
+			/* first read it normally to see that the
+			   writes got scattered */
+			or = _start_request(osd_dev, __func__, __LINE__);
+			if (!or)
+				return -ENOMEM;
+
+			ret = osd_req_read_kern(or, &obj, 0,
+					  read_buff, BUFF_SIZE);
+			if (ret) {
+				OSD_ERR("!!! Failed osd_req_read_kern\n");
+				return ret;
+			}
+
+			ret = _exec(or, &obj, caps, "read");
+			if (ret)
+				return ret;
+
+			for (i = 0; i < num_sg_entries; i++) {
+				uint8_t *rbuff =
+					&(((uint8_t *)read_buff)[i * segsize]);
+				uint8_t *wbuff =
+					&(((uint8_t *)write_buff)[
+					       (num_sg_entries-i-1) * segsize]);
+				if (memcmp(rbuff, wbuff, segsize))
+					OSD_ERR("!!! Read did not compare\n");
+			}
+
+			/* now read it with the scatter gather list */
+			or = _start_request(osd_dev, __func__, __LINE__);
+			if (!or)
+				return -ENOMEM;
+
+			ret = osd_req_read_sg_kern(or, &obj, buff, sglist,
+						   num_sg_entries);
+			if (ret) {
+				OSD_ERR("!!! Failed osd_req_read_sg_kern\n");
+				return ret;
+			}
+
+			ret = _exec(or, &obj, caps, "read_sg");
+			if (ret)
+				return ret;
+
+			if (memcmp(read_buff, write_buff, BUFF_SIZE))
+				OSD_ERR("!!! Read SG did not compare\n");
 		}
 
 	return 0;
@@ -506,6 +628,16 @@ int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 
 /* read from objects and compare to write */
 	ret = ktest_read_obj(od, write_buff, read_buff);
+	if (ret)
+		goto dev_fini;
+
+/* write sg to objects */
+	ret = ktest_write_sg_obj(od, write_buff);
+	if (ret)
+		goto dev_fini;
+
+/* read sg from objects */
+	ret = ktest_read_sg_obj(od, write_buff, read_buff);
 	if (ret)
 		goto dev_fini;
 
