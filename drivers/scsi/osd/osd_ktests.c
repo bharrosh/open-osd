@@ -77,7 +77,7 @@ static struct osd_request *_start_request(struct osd_dev *od,
 	return or;
 }
 
-static int _exec(struct osd_request *or, const struct osd_obj_id *obj,
+static int _exec_only(struct osd_request *or, const struct osd_obj_id *obj,
 		 u8 *caps, const char *msg)
 {
 	int ret;
@@ -90,7 +90,6 @@ static int _exec(struct osd_request *or, const struct osd_obj_id *obj,
 
 	osd_execute_request(or);
 	ret = osd_req_decode_sense(or, &osi);
-	osd_end_request(or);
 
 out:
 	if (msg) {
@@ -100,6 +99,15 @@ out:
 			OSD_ERR("Error executing %s => %d\n", msg, ret);
 	}
 
+	return ret;
+}
+
+static int _exec(struct osd_request *or, const struct osd_obj_id *obj,
+		 u8 *caps, const char *msg)
+{
+	int ret = _exec_only(or, obj, caps, msg);
+
+	osd_end_request(or);
 	return ret;
 }
 
@@ -302,8 +310,7 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 	bool doread, bool doset, bool doget)
 {
 	struct osd_request *or;
-	struct osd_sense_info osi;
-	char caps[OSD_CAP_LEN];
+	u8 caps[OSD_CAP_LEN];
 	int ret;
 	const char *domsg;
 	/* set attrs */
@@ -340,7 +347,7 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 
 	if (ret) {
 		OSD_ERR("!!! Failed on osd_req_read/write_kern\n");
-		return ret;
+		goto out;
 	}
 
 	if (doset)
@@ -348,13 +355,7 @@ static int ktest_write_read_attr(struct osd_dev *osd_dev, void *buff,
 	if (doget)
 		osd_req_add_get_attr_list(or, get_attrs, 2);
 
-	osd_sec_init_nosec_doall_caps(caps, &obj, false, true);
-	ret = osd_finalize_request(or, 0, caps, NULL);
-	if (ret)
-		goto out;
-
-	osd_execute_request(or);
-	ret = osd_req_decode_sense(or, &osi);
+	ret = _exec_only(or, &obj, caps, NULL);
 	if (!ret && doget) {
 		void *iter = NULL, *pFirst, *pSec;
 		int nelem = 2;
@@ -387,6 +388,78 @@ out:
 	}
 
 	return 0;
+}
+
+static int ktest_clocks(struct osd_dev *osd_dev, void *buff, bool do_user_attr)
+{
+	struct osd_obj_id obj = {
+		.partition = first_par_id,
+		.id = first_obj_id,
+	};
+	struct osd_attr set_user_attr[] = {
+		ATTR_SET(OSD_APAGE_APP_DEFINED_FIRST, 1, sizeof(obj), &obj),
+	};
+	struct osd_attr get_clocks[] = {
+		ATTR_DEF(OSD_APAGE_OBJECT_TIMESTAMP,
+			OSD_ATTR_OT_DATA_MODIFIED_TIME, sizeof(__be64)),
+		ATTR_DEF(OSD_APAGE_OBJECT_TIMESTAMP,
+			OSD_ATTR_OT_ATTRIBUTES_MODIFIED_TIME, sizeof(__be64)),
+	};
+	struct osd_request *or;
+	u8 caps[OSD_CAP_LEN];
+	int ret;
+
+	// write data and/or user_attar
+	or = _start_request(osd_dev, __func__, __LINE__);
+	if (!or)
+		return -ENOMEM;
+
+	if (buff) {
+		ret = osd_req_write_kern(or, &obj, 0,buff, BUFF_SIZE);
+		if (ret) {
+			OSD_ERR("!!! Failed osd_req_write_kern\n");
+			goto out;
+		}
+	} else {
+		osd_req_set_attributes(or, &obj);
+	}
+
+	if (do_user_attr)
+		osd_req_add_set_attr_list(or, set_user_attr, 1);
+
+	osd_req_add_get_attr_list(or, get_clocks, 2);
+
+	ret = _exec_only(or, &obj, caps, "test_clocks");
+	if (ret)
+		goto out;
+
+	// decode print two clocks
+	if (!ret) {
+		void *iter = NULL, *pFirst, *pSec;
+		int nelem = 2;
+		struct timespec data_time = {-1, -1}, attr_time = {-1, -1};
+
+		osd_req_decode_get_attr_list(or, get_clocks, &nelem, &iter);
+
+		pFirst = get_clocks[0].val_ptr;
+		if (pFirst)
+			osd_otime_2_utime(pFirst, &data_time);
+		else
+			OSD_ERR("failed to read data_time\n");
+		pSec = get_clocks[1].val_ptr;
+		if (pSec)
+			osd_otime_2_utime(pSec, &attr_time);
+		else
+			OSD_ERR("failed to read logical_length\n");
+		OSD_INFO("Clocks data_time=%ld:%ld attr_time=%ld:%ld\n",
+			 data_time.tv_sec, data_time.tv_nsec,
+			 attr_time.tv_sec, attr_time.tv_nsec);
+	}
+
+	// done
+out:
+	osd_end_request(or);
+	return ret;
 }
 
 int do_test_17(struct osd_dev *od, unsigned cmd __unused,
@@ -468,6 +541,26 @@ int do_test_17(struct osd_dev *od, unsigned cmd __unused,
 	if (ret)
 		goto dev_fini;
 
+/* Print clocks after data_write & attr_set */
+	ret = ktest_clocks(od, write_buff, true);
+	if (ret)
+		goto dev_fini;
+
+/* Print clocks after data_write only */
+	ret = ktest_clocks(od, write_buff, false);
+	if (ret)
+		goto dev_fini;
+
+/* Print clocks after attr_set only */
+	ret = ktest_clocks(od, NULL, true);
+	if (ret)
+		goto dev_fini;
+
+/* Print clocks after truncate */
+/*	ret = ktest_clocks_truncate(od);
+	if (ret)
+		goto dev_fini;
+*/
 /* remove objects */
 	ret = ktest_remove_obj(od);
 	if (ret)
