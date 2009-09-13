@@ -17,13 +17,18 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include <limits.h>
 
 #define __bitwise
 
 typedef uint64_t u64;
+typedef uint64_t __u64;
 typedef uint32_t u32;
+typedef uint32_t __u32;
 typedef uint16_t u16;
+typedef uint16_t __u16;
 typedef uint8_t  u8;
+typedef uint8_t  __u8;
 typedef int32_t __s32;
 
 typedef u64 __bitwise __le64;
@@ -89,5 +94,9 @@ enum {
 })
 
 #define ULLONG_MAX (~0ULL)
+
+#ifndef BITS_PER_LONG
+#  define BITS_PER_LONG (ULONG_MAX == 0xFFFFFFFFUL ? 32 : 64)
+#endif
 
 #endif /* ndef __KinU_TYPES_H__ */
