@@ -48,9 +48,10 @@ stop_mount()
 	umount $MOUNTDIR
 }
 
+UUID="d2683732-c906-4ee1-9dbd-c10c27bb40df"
 mkexofs_format()
 {
-	$USR_DIR/mkfs.exofs --pid=$PID --format=$FORMAT_SIZE $DEV_OSD
+	$USR_DIR/mkfs.exofs --pid=$PID --format=$FORMAT_SIZE $DEV_OSD --osdname=$UUID
 }
 
 exofs_hello_world()
@@ -59,16 +60,30 @@ exofs_hello_world()
 	cat $MOUNTDIR/world
 }
 
+do_nfsdbg()
+{
+# 	nfsdbg
+	echo $((0x1000)) > /proc/sys/sunrpc/nfs_debug
+	echo $((0x7fff)) > /proc/sys/sunrpc/nfsd_debug
+	echo "8 7 1 7" > /proc/sys/kernel/printk
+
+# 	nfsdbg off
+# 	echo $((0x0000)) > /proc/sys/sunrpc/nfs_debug
+# 	echo $((0x0)) > /proc/sys/sunrpc/nfsd_debug
+}
+
 do_pnfs_start()
 {
+	if ! [ -e /mnt/osd0/dd ]; then
+		start_exofs
+		start_mount
+	fi
+
 	service nfs start
 
-#	echo $((0x7fff)) > /proc/sys/sunrpc/nfs_debug
-#	echo $((0x7fff)) > /proc/sys/sunrpc/nfsd_debug
-	nfsdbg
 	modprobe objlayoutdriver
 
-# 	mount -t nfs4 -o minorversion=1 localhost:/ $MNT_PNFS
+	mount -t nfs4 -o minorversion=1 localhost:/ $MNT_PNFS
 }
 
 do_pnfs_stop()
@@ -87,8 +102,29 @@ cthon_test()
 
 dd_test()
 {
-	dd if=/dev/zero of=$MNT_PNFS/dd bs=4M count=1
+	# let in an IO for the grace period
+	dd if=/dev/zero of=$MNT_PNFS/dd4 bs=4k count=512
+
+	prompt "do truncate test"
+	# start the test
+	{
+		for i in {1..10}; do
+			echo $i;
+			dd if=/dev/zero bs=4k count=512
+			sleep 1;
+		done > $MNT_PNFS/dd4 ;
+		echo "===== T1 =====" ;
+	} &
+
+	{
+		for i in {1..30}; do
+			echo -n . ;
+			echo b > $MOUNTDIR/dd4; sleep 0.33;
+		done ;
+		echo "===== T2 =====" ;
+	} &
 }
+# dd if=/dev/zero of=/mnt/pnfs/dd seek=16 bs=4k count=512
 
 case $1 in
 start)
@@ -160,4 +196,13 @@ pnfs_stop)
 	do_pnfs_stop
 	echo $0 pnfs_stop | logger
 	;;
+
+pnfs_test)
+	dd_test
+	;;
+
+nfsdbg)
+	do_nfsdbg
+	;;
+
 esac
