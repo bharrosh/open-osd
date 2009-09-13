@@ -128,6 +128,23 @@ test_osd()
 # 	./usr/osd_test --kernel=1 --usrlib=0 $DEV_OSD
 }
 
+do_osdblk()
+{
+
+# create
+# 	usr/osdblk --create --pid=0x10017 --oid=0x10017 --length=100M /dev/osd0
+
+# probe
+
+# load_object
+	modprobe osdblk
+	echo $((0x10017)) $((0x10017)) /dev/osd0 > /sys/class/osdblk/add
+
+# unload
+# 	echo 0 > /sys/class/osdblk/remove
+
+}
+
 run_exofs()
 {
 	./do-exofs format_start
@@ -155,6 +172,10 @@ stop)
 
 test)
 	test_osd
+	;;
+
+osdblk)
+	do_osdblk
 	;;
 
 login)
