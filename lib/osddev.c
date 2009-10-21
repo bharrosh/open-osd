@@ -50,6 +50,7 @@
 
 struct libosd_dev {
 	struct osd_dev od; /* keep this first! (container_of not) */
+	struct osd_dev_info odi;
 	struct request_queue bsg;
 	struct scsi_device scsi_device;
 };
@@ -77,7 +78,7 @@ int osd_open(const char *osd_path, struct osd_dev **pod)
 	lod->scsi_device.request_queue = &lod->bsg;
 	osd_dev_init(&lod->od, &lod->scsi_device);
 	osd_sec_init_nosec_doall_caps(caps, &osd_root_object, false, true);
-	ret = osd_auto_detect_ver(&lod->od, caps);
+	ret = osd_auto_detect_ver(&lod->od, caps, &lod->odi);
 	if (ret)
 		goto bsg_close;
 
@@ -99,6 +100,13 @@ void osd_close(struct osd_dev *od)
 	osd_dev_fini(&lod->od);
 	bsg_close(&lod->bsg);
 	free(lod);
+}
+
+const struct osd_dev_info *osduld_device_info(struct osd_dev *od)
+{
+	struct libosd_dev *lod = (struct libosd_dev *)od;
+
+	return &lod->odi;
 }
 
 int osdpath_to_bsgpath(const char *osd_path, char *bsg_path)
