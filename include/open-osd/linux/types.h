@@ -93,7 +93,9 @@ enum {
 	unlikely(__ret_warn_on);					\
 })
 
-#define ULLONG_MAX (~0ULL)
+#ifndef ULLONG_MAX
+#  define ULLONG_MAX (~0ULL)
+#endif
 
 #ifndef BITS_PER_LONG
 #  define BITS_PER_LONG (ULONG_MAX == 0xFFFFFFFFUL ? 32 : 64)
