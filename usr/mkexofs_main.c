@@ -69,6 +69,12 @@ static void usage(void)
 	"        is optional, if not specified, or is bigger then, all\n"
 	"        available space will be used\n"
 	"\n"
+	"--osdname=user_set_osd_name\n"
+	"        Set the root partition's osd_name attribute to this value.\n"
+	"        for unique identification of the osd device.\n"
+	"        Usually this is a value returned from the uuidgen command.\n"
+	"        (only applies if used with --format)\n"
+	"\n"
 	"/dev/osdX is the osd LUN (char-dev) to use for preparing the exofs\n"
 	"filesystem on\n"
 	"\n"
@@ -79,7 +85,8 @@ static void usage(void)
 	printf(msg, EXOFS_MIN_PID, EXOFS_MIN_PID);
 }
 
-static int _mkfs(char *path, osd_id p_id, u64 format_size_meg)
+static int _mkfs(char *path, osd_id p_id, u64 format_size_meg, u8 *osdname,
+		 unsigned osdname_len)
 {
 	struct osd_dev *od;
 	int ret;
@@ -88,7 +95,7 @@ static int _mkfs(char *path, osd_id p_id, u64 format_size_meg)
 	if (ret)
 		return ret;
 
-	ret = exofs_mkfs(od, p_id, format_size_meg);
+	ret = exofs_mkfs(od, p_id, format_size_meg, osdname, osdname_len);
 
 	osd_close(od);
 
@@ -107,10 +114,12 @@ int main(int argc, char *argv[])
 	struct option opt[] = {
 		{.name = "pid", .has_arg = 1, .flag = NULL, .val = 'p'} ,
 		{.name = "format", .has_arg = 2, .flag = NULL, .val = 'f'} ,
+		{.name = "osdname", .has_arg = 1, .flag = NULL, .val = 'd'} ,
 		{.name = 0, .has_arg = 0, .flag = 0, .val = 0} ,
 	};
 	osd_id pid = 0;
 	u64 format_size_meg = 0;
+	char *osdname = NULL;
 	char op;
 
 	while ((op = getopt_long(argc, argv, "p:f::n", opt, NULL)) != -1) {
@@ -125,6 +134,9 @@ int main(int argc, char *argv[])
 				EXOFS_FORMAT_ALL;
 			if (!format_size_meg) /* == 0 is accepted */
 				format_size_meg = EXOFS_FORMAT_ALL;
+			break;
+		case 'd':
+			osdname = strdup(optarg);
 			break;
 		}
 	}
@@ -142,5 +154,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	return _mkfs(argv[0], pid, format_size_meg);
+	return _mkfs(argv[0], pid, format_size_meg, (u8 *)osdname,
+		     osdname ? strlen(osdname) : 0);
 }

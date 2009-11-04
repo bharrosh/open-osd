@@ -117,7 +117,8 @@ static int kick_it(struct osd_request *or, uint8_t *cred,
 }
 
 /* Format the LUN to the specified size */
-static int format(struct osd_dev *od, uint64_t lun_capacity)
+static int format(struct osd_dev *od, uint64_t lun_capacity, u8 *osdname,
+		  unsigned osdname_len)
 {
 	struct osd_request *or = osd_start_request(od, GFP_KERNEL);
 	uint8_t cred_a[OSD_CAP_LEN];
@@ -128,6 +129,15 @@ static int format(struct osd_dev *od, uint64_t lun_capacity)
 
 	_make_credential(cred_a, &osd_root_object);
 	osd_req_format(or, lun_capacity);
+
+	if (osdname_len) {
+		struct osd_attr attr_osdname =
+			ATTR_SET(OSD_APAGE_ROOT_INFORMATION,
+				 OSD_ATTR_RI_OSD_NAME, osdname_len, osdname);
+
+		osd_req_add_set_attr_list(or, &attr_osdname, 1);
+	}
+
 	ret = kick_it(or, cred_a, "format");
 	osd_end_request(or);
 
@@ -289,7 +299,8 @@ static int set_inode(struct osd_dev *od, const struct osd_obj_id *obj,
 /*
  * This function creates an exofs file system on the specified OSD partition.
  */
-int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg)
+int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg,
+	       u8 *osdname, unsigned osdname_len)
 {
 	struct osd_obj_id obj_root = {p_id, EXOFS_ROOT_ID};
 	struct osd_obj_id obj_super = {p_id, EXOFS_SUPER_ID};
@@ -299,6 +310,9 @@ int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg)
 
 	/* Format LUN if requested */
 	if (format_size_meg > 0) {
+		if (osdname_len)
+			MKFS_INFO("Formatting osdname=[%s]\n", osdname);
+
 		if (format_size_meg != EXOFS_FORMAT_ALL)
 			MKFS_INFO("Formatting %llu Mgb...",
 				     _LLU(format_size_meg));
@@ -307,7 +321,8 @@ int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg)
 			format_size_meg = 0;
 		}
 
-		err = format(od, format_size_meg * 1024 * 1024);
+		err = format(od, format_size_meg * 1024 * 1024, osdname,
+			     osdname_len);
 		if (err)
 			goto out;
 		MKFS_PRNT(" OK\n");

@@ -48,6 +48,7 @@
 /* mkexofs.c             */
 #define EXOFS_FORMAT_ALL (~0LLU)
 
-int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg);
+int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg,
+	       u8 *osdname, unsigned osdname_len);
 
 #endif /*ndef __MKEXOFS_H__*/
