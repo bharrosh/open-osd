@@ -5,9 +5,14 @@ OO_ROOT=`dirname $0`
 EXOFS_DIR=$OO_ROOT/fs/exofs
 USR_DIR=$OO_ROOT/usr
 MOUNTDIR=/mnt/osd0
-DEV_OSD=/dev/osd0
 PID=0x10000
 FORMAT_SIZE=0
+
+DEV_OSD0=/dev/osd0
+UUID0="d2683732-c906-4ee1-9dbd-c10c27bb40df"
+
+DEV_OSD1=/dev/osd1
+UUID1="68b603b0-e438-43cb-8252-cd264c33dbcf"
 
 MNT_PNFS=/mnt/pnfs
 
@@ -40,7 +45,7 @@ start_mount()
 {
 	OPT="pid=$PID,_netdev"
 
-	mount -t exofs -o $OPT $DEV_OSD $MOUNTDIR
+	mount -t exofs -o $OPT $DEV_OSD0 $MOUNTDIR
 }
 
 stop_mount()
@@ -48,10 +53,12 @@ stop_mount()
 	umount $MOUNTDIR
 }
 
-UUID="d2683732-c906-4ee1-9dbd-c10c27bb40df"
 mkexofs_format()
 {
-	$USR_DIR/mkfs.exofs --pid=$PID --format=$FORMAT_SIZE $DEV_OSD --osdname=$UUID
+	$USR_DIR/mkfs.exofs \
+		--pid=$PID --raid=0 --mirrors=1\
+		--dev=$DEV_OSD0 --format=$FORMAT_SIZE  --osdname=$UUID0 \
+		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1
 }
 
 exofs_hello_world()
@@ -74,7 +81,7 @@ do_nfsdbg()
 
 do_pnfs_start()
 {
-	if ! [ -e /mnt/osd0/dd ]; then
+	if [ -z "$(df $MOUNTDIR |grep $DEV_OSD0)" ]; then
 		start_exofs
 		start_mount
 	fi
