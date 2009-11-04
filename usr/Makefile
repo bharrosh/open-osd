@@ -61,22 +61,17 @@ osd_test_clean:
 $(DEPEND): $(OT_COMMON_OBJ:.o=.c) $(OT_OBJ:.o=.c)
 
 # =============== mkexofs ======================================================
-mkfs_COMMON_OBJ=osd.o
 mkfs_OBJ=mkexofs_main.o mkexofs.o
 
 # add for mkexofs debugging
 # CFLAGS += -DCONFIG_MKEXOFS_DEBUG
 
-osd.c:
-	ln -sf $(EXOFS_PATH)/osd.c
-
-mkfs.exofs:  $(mkfs_OBJ) $(mkfs_COMMON_OBJ)
+mkfs.exofs:  $(mkfs_OBJ)
 	$(CC) -o $@ $^ $(OSD_LIBS)
 
 mkfs.exofs_clean:
-	rm -vf $(mkfs_COMMON_OBJ:.o=.c)
 
-$(DEPEND): $(mkfs_COMMON_OBJ:.o=.c) $(mkfs_OBJ:.o=.c)
+$(DEPEND): $(mkfs_OBJ:.o=.c)
 
 # =============== osdblk ======================================================
 osdblk_OBJ=osdblk.o

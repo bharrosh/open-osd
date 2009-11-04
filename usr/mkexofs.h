@@ -4,16 +4,7 @@
  * Copyright (C) 2008, 2009
  * Boaz Harrosh <bharrosh@panasas.com>
  *
- * Copyrights for code taken from ext2:
- *     Copyright (C) 1992, 1993, 1994, 1995
- *     Remy Card (card@masi.ibp.fr)
- *     Laboratoire MASI - Institut Blaise Pascal
- *     Universite Pierre et Marie Curie (Paris VI)
- *     from
- *     linux/fs/minix/inode.c
- *     Copyright (C) 1991, 1992  Linus Torvalds
- *
- * This file is part of exofs.
+ * This file is part of exofs user-mode utilities.
  *
  * exofs is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,8 +22,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#ifndef __EXOFS_H__
-#define __EXOFS_H__
+#ifndef __MKEXOFS_H__
+#define __MKEXOFS_H__
 
 #include "common.h"
 
@@ -57,7 +48,6 @@
 /* mkexofs.c             */
 #define EXOFS_FORMAT_ALL (~0LLU)
 
-int exofs_mkfs(struct osd_dev *od, osd_id p_id, bool destructive,
-		uint64_t format_size_meg);
+int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg);
 
-#endif
+#endif /*ndef __MKEXOFS_H__*/

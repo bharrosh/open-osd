@@ -37,7 +37,7 @@
  */
 
 #include <open-osd/libosd.h>
-#include "exofs.h"
+#include "mkexofs.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -69,25 +69,17 @@ static void usage(void)
 	"        is optional, if not specified, or is bigger then, all\n"
 	"        available space will be used\n"
 	"\n"
-	"--not_destructive\n"
-	"        Do NOT remove a partition if one already exists.\n"
-	"        Hence refuse the mkfs and return\n"
-	"        (Meaningless if used with --format\n"
-	"\n"
 	"/dev/osdX is the osd LUN (char-dev) to use for preparing the exofs\n"
 	"filesystem on\n"
 	"\n"
 	"Description: An exofs filesystem sits inside an OSD partition.\n"
-	"  /dev/osdX + pid_no is the partition to use. If the partition\n"
-	"  exists and --not_distructive is not used the old partition is\n"
-	"   removed and a new one is created in its place.\n"
+	"  /dev/osdX + pid_no is the partition to use.\n"
 	};
 
 	printf(msg, EXOFS_MIN_PID, EXOFS_MIN_PID);
 }
 
-static int _mkfs(char *path, osd_id p_id, bool destructive,
-		 u64 format_size_meg)
+static int _mkfs(char *path, osd_id p_id, u64 format_size_meg)
 {
 	struct osd_dev *od;
 	int ret;
@@ -96,20 +88,15 @@ static int _mkfs(char *path, osd_id p_id, bool destructive,
 	if (ret)
 		return ret;
 
-	ret = exofs_mkfs(od, p_id, destructive, format_size_meg);
+	ret = exofs_mkfs(od, p_id, format_size_meg);
 
 	osd_close(od);
 
 	if (ret) {
 		/* exofs_mkfs is a kernel API it returns negative errors */
 		ret = -ret;
-		if (ret == EEXIST && !destructive)
-			printf("pid 0x%llx already exist and --not_destructive"
-			       " specified, will not remove an existing"
-			       " partition\n", _LLU(p_id));
-		else
-			printf("exofs_mkfs --pid=0x%llx returned %d: %s\n",
-				_LLU(p_id), ret, strerror(ret));
+		printf("exofs_mkfs --pid=0x%llx returned %d: %s\n",
+			_LLU(p_id), ret, strerror(ret));
 	}
 
 	return ret;
@@ -119,13 +106,10 @@ int main(int argc, char *argv[])
 {
 	struct option opt[] = {
 		{.name = "pid", .has_arg = 1, .flag = NULL, .val = 'p'} ,
-		{.name = "not_destructive", .has_arg = 0, .flag = NULL,
-								.val = 'n'} ,
 		{.name = "format", .has_arg = 2, .flag = NULL, .val = 'f'} ,
 		{.name = 0, .has_arg = 0, .flag = 0, .val = 0} ,
 	};
 	osd_id pid = 0;
-	bool desctructive = true;
 	u64 format_size_meg = 0;
 	char op;
 
@@ -141,10 +125,6 @@ int main(int argc, char *argv[])
 				EXOFS_FORMAT_ALL;
 			if (!format_size_meg) /* == 0 is accepted */
 				format_size_meg = EXOFS_FORMAT_ALL;
-			break;
-
-		case 'n':
-			desctructive = false;
 			break;
 		}
 	}
@@ -162,5 +142,5 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	return _mkfs(argv[0], pid, desctructive, format_size_meg);
+	return _mkfs(argv[0], pid, format_size_meg);
 }

@@ -25,7 +25,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include "exofs.h"
+#include "mkexofs.h"
+#include <scsi/osd_sense.h>
 
 #ifdef __KERNEL__
 #include <linux/random.h>
@@ -68,21 +69,55 @@ struct timeval t;
 #    define __unused			__attribute__((unused))
 #endif
 
-static int kick_it(struct osd_request *or, int timeout, uint8_t *cred,
+static void _make_credential(u8 cred_a[OSD_CAP_LEN],
+			     const struct osd_obj_id *obj)
+{
+	osd_sec_init_nosec_doall_caps(cred_a, obj, false, true);
+}
+
+static int _check_ok(struct osd_request *or)
+{
+	struct osd_sense_info osi;
+	int ret = osd_req_decode_sense(or, &osi);
+
+	if (unlikely(ret)) { /* translate to Linux codes */
+		if (osi.additional_code == scsi_invalid_field_in_cdb) {
+			if (osi.cdb_field_offset == OSD_CFO_STARTING_BYTE)
+				ret = -EFAULT;
+			if (osi.cdb_field_offset == OSD_CFO_OBJECT_ID)
+				ret = -ENOENT;
+			else
+				ret = -EINVAL;
+		} else if (osi.additional_code == osd_quota_error)
+			ret = -ENOSPC;
+		else
+			ret = -EIO;
+	}
+
+	return ret;
+}
+
+static int kick_it(struct osd_request *or, uint8_t *cred,
 		   const char *op __unused)
 {
 	int ret;
 
-	exofs_sync_op(or, timeout, cred);
-	ret = exofs_check_ok(or);
-	if (ret)
+	ret = osd_finalize_request(or, 0, cred, NULL);
+	if (ret) {
+		EXOFS_DBGMSG("Faild to osd_finalize_request() => %d\n", ret);
+		return ret;
+	}
+
+	osd_execute_request(or);
+	ret = _check_ok(or);
+	if (unlikely(ret))
 		EXOFS_DBGMSG("Execute %s => %d\n", op, ret);
 
 	return ret;
 }
 
 /* Format the LUN to the specified size */
-static int format(struct osd_dev *od, uint64_t lun_capacity, int timeout)
+static int format(struct osd_dev *od, uint64_t lun_capacity)
 {
 	struct osd_request *or = osd_start_request(od, GFP_KERNEL);
 	uint8_t cred_a[OSD_CAP_LEN];
@@ -91,53 +126,35 @@ static int format(struct osd_dev *od, uint64_t lun_capacity, int timeout)
 	if (unlikely(!or))
 		return -ENOMEM;
 
-	exofs_make_credential(cred_a, &osd_root_object);
+	_make_credential(cred_a, &osd_root_object);
 	osd_req_format(or, lun_capacity);
-	ret = kick_it(or, timeout, cred_a, "format");
+	ret = kick_it(or, cred_a, "format");
 	osd_end_request(or);
 
 	return ret;
 }
 
-static int create_partition(struct osd_dev *od, osd_id p_id, int timeout,
-			    bool destructive)
+static int create_partition(struct osd_dev *od, osd_id p_id)
 {
 	struct osd_request *or;
 	struct osd_obj_id pid_obj = {p_id, 0};
 	uint8_t cred_a[OSD_CAP_LEN];
-	bool try_remove = false;
 	int ret;
 
-	exofs_make_credential(cred_a, &pid_obj);
+	_make_credential(cred_a, &pid_obj);
 
-create_part:
 	or = osd_start_request(od, GFP_KERNEL);
 	if (unlikely(!or))
 		return -ENOMEM;
 
 	osd_req_create_partition(or, p_id);
-	ret = kick_it(or, timeout, cred_a, "create partition");
+	ret = kick_it(or, cred_a, "create partition");
 	osd_end_request(or);
 
-	if (ret && !try_remove) {
-		if (!destructive)
-			return -EEXIST;
-
-		try_remove = true;
-		or = osd_start_request(od, GFP_KERNEL);
-		if (unlikely(!or))
-			return -ENOMEM;
-		osd_req_remove_partition(or, p_id);
-		ret = kick_it(or, timeout, cred_a, "remove partition");
-		osd_end_request(or);
-		if (!ret) /* Try again now */
-			goto create_part;
-	}
-
-	return ret;
+	return ret ? -EEXIST : 0;
 }
 
-static int create(struct osd_dev *od, struct osd_obj_id *obj, int timeout)
+static int create(struct osd_dev *od, const struct osd_obj_id *obj)
 {
 	struct osd_request *or = osd_start_request(od, GFP_KERNEL);
 	uint8_t cred_a[OSD_CAP_LEN];
@@ -146,15 +163,16 @@ static int create(struct osd_dev *od, struct osd_obj_id *obj, int timeout)
 	if (unlikely(!or))
 		return -ENOMEM;
 
-	exofs_make_credential(cred_a, obj);
-	osd_req_create_object(or, obj);
-	ret = kick_it(or, timeout, cred_a, "create");
+	_make_credential(cred_a, obj);
+	 /*FIXME osd_req_create_object() */
+	osd_req_create_object(or, (struct osd_obj_id *)obj);
+	ret = kick_it(or, cred_a, "create");
 	osd_end_request(or);
 
 	return ret;
 }
 
-static int write_super(struct osd_dev *od, struct osd_obj_id *obj, int timeout)
+static int write_super(struct osd_dev *od, const struct osd_obj_id *obj)
 {
 	struct osd_request *or = osd_start_request(od, GFP_KERNEL);
 	uint8_t cred_a[OSD_CAP_LEN];
@@ -164,22 +182,22 @@ static int write_super(struct osd_dev *od, struct osd_obj_id *obj, int timeout)
 	if (unlikely(!or))
 		return -ENOMEM;
 
-	exofs_make_credential(cred_a, obj);
+	_make_credential(cred_a, obj);
 
+	memset(&data, 0, sizeof(data));
 	data.s_nextid = cpu_to_le64(4);
 	data.s_magic = cpu_to_le16(EXOFS_SUPER_MAGIC);
 	data.s_newfs = 1;
 	data.s_numfiles = 0;
 
 	osd_req_write_kern(or, obj, 0, &data, sizeof(data));
-	ret = kick_it(or, timeout, cred_a, "write super");
+	ret = kick_it(or, cred_a, "write super");
 	osd_end_request(or);
 
 	return ret;
 }
 
-static int write_rootdir(struct osd_dev *od, struct osd_obj_id *obj,
-			 int timeout)
+static int write_rootdir(struct osd_dev *od, const struct osd_obj_id *obj)
 {
 	struct osd_request *or;
 	uint8_t cred_a[OSD_CAP_LEN];
@@ -218,15 +236,15 @@ static int write_rootdir(struct osd_dev *od, struct osd_obj_id *obj,
 	if (unlikely(!or))
 		return -ENOMEM;
 
-	exofs_make_credential(cred_a, obj);
+	_make_credential(cred_a, obj);
 	osd_req_write_kern(or, obj, off, buf, EXOFS_BLKSIZE);
-	ret = kick_it(or, timeout, cred_a, "write rootdir");
+	ret = kick_it(or, cred_a, "write rootdir");
 	osd_end_request(or);
 
 	return ret;
 }
 
-static int set_inode(struct osd_dev *od, struct osd_obj_id *obj, int timeout,
+static int set_inode(struct osd_dev *od, const struct osd_obj_id *obj,
 		     uint16_t i_size, uint16_t mode)
 {
 	struct osd_request *or;
@@ -255,14 +273,14 @@ static int set_inode(struct osd_dev *od, struct osd_obj_id *obj, int timeout,
 	if (unlikely(!or))
 		return -ENOMEM;
 
-	exofs_make_credential(cred_a, obj);
+	_make_credential(cred_a, obj);
 	osd_req_set_attributes(or, obj);
 
 	attr = g_attr_inode_data;
 	attr.val_ptr = &inode;
 	osd_req_add_set_attr_list(or, &attr, 1);
 
-	ret = kick_it(or, timeout, cred_a, "set inode");
+	ret = kick_it(or, cred_a, "set inode");
 	osd_end_request(or);
 
 	return ret;
@@ -271,13 +289,10 @@ static int set_inode(struct osd_dev *od, struct osd_obj_id *obj, int timeout,
 /*
  * This function creates an exofs file system on the specified OSD partition.
  */
-int exofs_mkfs(struct osd_dev *od, osd_id p_id, bool destructive,
-		uint64_t format_size_meg)
+int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg)
 {
 	struct osd_obj_id obj_root = {p_id, EXOFS_ROOT_ID};
 	struct osd_obj_id obj_super = {p_id, EXOFS_SUPER_ID};
-	const int to_gen = 60 * HZ;
-	const int to_format = 10 * to_gen;
 	int err;
 
 	MKFS_INFO("setting up exofs on partition 0x%llx:\n", _LLU(p_id));
@@ -292,7 +307,7 @@ int exofs_mkfs(struct osd_dev *od, osd_id p_id, bool destructive,
 			format_size_meg = 0;
 		}
 
-		err = format(od, format_size_meg * 1024 * 1024, to_format);
+		err = format(od, format_size_meg * 1024 * 1024);
 		if (err)
 			goto out;
 		MKFS_PRNT(" OK\n");
@@ -300,42 +315,42 @@ int exofs_mkfs(struct osd_dev *od, osd_id p_id, bool destructive,
 
 	/* Create partition */
 	MKFS_INFO("creating partition...");
-	err = create_partition(od, p_id, to_format, destructive);
+	err = create_partition(od, p_id);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Create object with known ID for superblock info */
 	MKFS_INFO("creating superblock...");
-	err = create(od, &obj_super, to_gen);
+	err = create(od, &obj_super);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Create root directory object */
 	MKFS_INFO("creating root directory...");
-	err = create(od, &obj_root, to_gen);
+	err = create(od, &obj_root);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Write superblock */
 	MKFS_INFO("writing superblock...");
-	err = write_super(od, &obj_super, to_gen);
+	err = write_super(od, &obj_super);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Write root directory */
 	MKFS_INFO("writing root directory...");
-	err = write_rootdir(od, &obj_root, to_gen);
+	err = write_rootdir(od, &obj_root);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Set root partition inode attribute */
 	MKFS_INFO("writing root inode...");
-	err = set_inode(od, &obj_root, to_gen, EXOFS_BLKSIZE,
+	err = set_inode(od, &obj_root, EXOFS_BLKSIZE,
 			0040000 | (0777 & ~022));
 	if (err)
 		goto out;
