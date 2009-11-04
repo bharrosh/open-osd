@@ -48,21 +48,36 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-/* missing from old distro headers*/
-#ifndef ENOIOCTLCMD
-#  define ENOIOCTLCMD	515	/* No ioctl command */
-#endif
-
 static void usage(void)
 {
 	static char msg[] = {
-	"usage: mkfs.exofs --pid=pid_no [options] /dev/osdX\n"
+	"usage: mkfs.exofs --raid=# --pid=pid_no --dev=/dev/osdX [options]...\n"
+	"       repeated for each device\n"
+	"[Global options]\n"
+	"--raid=raid_num -r raid_num (optional)\n"
+	"        raid_num is the raid engine to use. It can be: 0, 4, 5, 6\n"
+	"        Default: 0\n"
+	"\n"
 	"--pid=pid_no -p pid_no\n"
 	"        pid_no is the partition number that will contain the new\n"
 	"        exofs filesystem. Minimum is %d (0x%x). pid_no can\n"
 	"        start with 0x to denote an hex number\n"
+	"        Note: Same pid is used on all devices\n"
 	"\n"
-	"--format[=format_size_meg]\n"
+	"--mirrors=num_of_mirrors -m num_of_mirrors (optional)\n"
+	"        num_of_mirrors is the additional mirror device count to use.\n"
+	"        If --raid=1 then all devices are mirror devices and this\n"
+	"        option is ignored\n"
+	"        Default: 0\n"
+	"\n"
+	"[Per Device options]\n"
+	"--dev=/dev/osdX\n"
+	"        /dev/osdX is the osd LUN (char-dev) to add to the exofs\n"
+	"        devices table. This option is repeated for each device,\n"
+	"        following by an optional --format and --osdname for each\n"
+	"        device."
+	"\n"
+	"--format[=format_size_meg] (optional)\n"
 	"        First format the OSD LUN (device) before preparing the\n"
 	"        filesystem. format_size_meg * 2^20 is the size in bytes\n"
 	"        to use with the OSD_FORMAT command (0x for hex). The size\n"
@@ -73,37 +88,134 @@ static void usage(void)
 	"        Set the root partition's osd_name attribute to this value.\n"
 	"        for unique identification of the osd device.\n"
 	"        Usually this is a value returned from the uuidgen command.\n"
-	"        (only applies if used with --format)\n"
+	"        only applies if used with --format\n"
+	"        This option is mandatory if --format is used. If a given\n"
+	"        device is not specified for format and it has a null osdname\n"
+	"        it can not be used.\n"
+	"        Careful: osdnames must be network unique\n"
 	"\n"
-	"/dev/osdX is the osd LUN (char-dev) to use for preparing the exofs\n"
-	"filesystem on\n"
-	"\n"
-	"Description: An exofs filesystem sits inside an OSD partition.\n"
-	"  /dev/osdX + pid_no is the partition to use.\n"
+	"Description: An exofs filesystem resides in one partition number on\n"
+	"one or more devices. Outlaid in the specified raid arrangement.\n"
+	"For any raid there can be also extra mirrors. The mirror devices are\n"
+	"ordered immediately after the first device in the stripe.\n"
+	"The mkexofs utility operates in two passes. First pass arranges all\n"
+	"devices in the proper raid+mirrors arrangement, formatting any\n"
+	"specified devices. Second pass will prepare all FS structures\n"
+	"necessary for an empty filesystem. Note that at this stage all\n"
+	"devices are identical, as most meta-data is mirrored in exofs. Any\n"
+	"of the devices specified can be passed to the mount command\n"
 	};
 
 	printf(msg, EXOFS_MIN_PID, EXOFS_MIN_PID);
 }
 
-static int _mkfs(char *path, osd_id p_id, u64 format_size_meg, u8 *osdname,
-		 unsigned osdname_len)
+struct _one_dev {
+	char *path;
+	u64 format_size_meg;
+	char *osdname;
+};
+
+static int _format(struct _one_dev *dev)
 {
 	struct osd_dev *od;
 	int ret;
 
-	ret = osd_open(path, &od);
+	ret = osd_open(dev->path, &od);
 	if (ret)
 		return ret;
 
-	ret = exofs_mkfs(od, p_id, format_size_meg, osdname, osdname_len);
+	if (!dev->osdname) {
+		printf("exofs_mkfs: Error! --format must also use --osdname\n"
+			"Please see \"exofs_mkfs --help\"\n");
+		return EINVAL;
+	}
+
+	ret = mkexofs_format(od, dev->format_size_meg, (u8 *)dev->osdname,
+			     strlen(dev->osdname));
+	if (ret) {
+		/* exofs_format is a kernel API it returns negative errors */
+		ret = -ret;
+		printf("exofs_mkfs exofs_format returned %d: %s\n",
+			ret, strerror(ret));
+	}
 
 	osd_close(od);
+
+	dev->format_size_meg = 0;
+	free(dev->osdname);
+	dev->osdname = NULL;
+	/* dev->path is passed to 2nd-pass, don't free */
+	dev->path = NULL;
+
+	return ret;
+}
+
+static int check_supported_params(struct mkexofs_cluster *c_header)
+{
+/* TODO: This is true to linux-open-osd.git at 2009_11_05.
+ *       Open up things here and update the date as things advance.
+ */
+
+	switch (c_header->raid_no) {
+	case 0:
+		break;
+	case 4:
+	case 5:
+	case 6:
+	default:
+		printf("ERROR: Only --raid==0 is currently supported\n");
+		return EINVAL;
+	}
+
+	if ((c_header->num_ods - 1) != c_header->mirrors) {
+		printf("WARNING: Only multy-device mirroring is currently"
+		       "supported. Building a %d-devices mirror array\n",
+			c_header->num_ods);
+		c_header->mirrors = c_header->num_ods - 1;
+	}
+
+	return 0;
+}
+
+static int _mkfs(char **pathes, struct mkexofs_cluster *c_header)
+{
+	struct mkexofs_cluster *cluster;
+	unsigned num_devs = c_header->num_ods;
+	unsigned i;
+	int ret;
+
+	ret = check_supported_params(c_header);
+	if (ret)
+		return ret;
+
+	cluster = malloc(sizeof(*cluster) + sizeof(cluster->ods[0]) * num_devs);
+	if (!cluster)
+		return ENOMEM;
+
+	*cluster = *c_header;
+	cluster->num_ods = 0;
+	for (i = 0; i < num_devs; i++) {
+		struct osd_dev *od;
+
+		ret = osd_open(pathes[i], &od);
+		if (ret)
+			goto failed;
+
+		cluster->ods[i] = od;
+		cluster->num_ods++;
+	}
+
+	ret = exofs_mkfs(cluster);
+
+failed:
+	while (cluster->num_ods--)
+		osd_close(cluster->ods[cluster->num_ods]);
 
 	if (ret) {
 		/* exofs_mkfs is a kernel API it returns negative errors */
 		ret = -ret;
 		printf("exofs_mkfs --pid=0x%llx returned %d: %s\n",
-			_LLU(p_id), ret, strerror(ret));
+			_LLU(cluster->pid), ret, strerror(ret));
 	}
 
 	return ret;
@@ -112,48 +224,98 @@ static int _mkfs(char *path, osd_id p_id, u64 format_size_meg, u8 *osdname,
 int main(int argc, char *argv[])
 {
 	struct option opt[] = {
+		/* Global */
 		{.name = "pid", .has_arg = 1, .flag = NULL, .val = 'p'} ,
+		{.name = "raid", .has_arg = 1, .flag = NULL, .val = 'r'} ,
+		{.name = "mirrors", .has_arg = 1, .flag = NULL, .val = 'm'} ,
+		/* stripe_unit, group_width, group_depth */
+
+		/* Per Device */
+		{.name = "dev", .has_arg = 1, .flag = NULL, .val = 'd'} ,
 		{.name = "format", .has_arg = 2, .flag = NULL, .val = 'f'} ,
-		{.name = "osdname", .has_arg = 1, .flag = NULL, .val = 'd'} ,
+		{.name = "osdname", .has_arg = 1, .flag = NULL, .val = 'o'} ,
 		{.name = 0, .has_arg = 0, .flag = 0, .val = 0} ,
 	};
-	osd_id pid = 0;
-	u64 format_size_meg = 0;
-	char *osdname = NULL;
+	struct mkexofs_cluster c_header = {
+		.pid = 0, .raid_no = 0, .mirrors = 0, .num_ods = 0,
+	};
+	struct _one_dev dev = {.path = NULL};
+	unsigned max_devs = 0;
+	char **devs = NULL;
 	char op;
+	int ret;
 
-	while ((op = getopt_long(argc, argv, "p:f::n", opt, NULL)) != -1) {
+	while (-1 != (op = getopt_long(argc, argv,
+				       "p:r:m:d:f::o:", opt, NULL))) {
 		switch (op) {
 		case 'p':
-			pid = strtoll(optarg, NULL, 0);
+			c_header.pid = strtoll(optarg, NULL, 0);
+			if (c_header.pid < EXOFS_MIN_PID) {
+				usage();
+				return 1;
+			}
+			break;
+		case 'r':
+			c_header.raid_no = atoi(optarg);
+			switch (c_header.raid_no) {
+			case 0:
+			case 4:
+			case 5:
+			case 6:
+				break;
+			default:
+				usage();
+				return 1;
+			}
+			break;
+		case 'm':
+			c_header.mirrors = atoi(optarg);
+			break;
+
+		case 'd':
+			if (dev.path && dev.format_size_meg) {
+				ret = _format(&dev);
+				if (ret)
+					return ret;
+			}
+			dev.path = strdup(optarg);
+			if (c_header.num_ods >= max_devs) {
+				max_devs += 16;
+				devs = realloc(devs, sizeof(*devs) * max_devs);
+				if (!devs)
+					return ENOMEM;
+			}
+			devs[c_header.num_ods++] = dev.path;
 			break;
 
 		case 'f':
-			format_size_meg = optarg ?
+			dev.format_size_meg = optarg ?
 				_LLU(strtoll(optarg, NULL, 0)) :
 				EXOFS_FORMAT_ALL;
-			if (!format_size_meg) /* == 0 is accepted */
-				format_size_meg = EXOFS_FORMAT_ALL;
+			if (!dev.format_size_meg) /* == 0 is accepted */
+				dev.format_size_meg = EXOFS_FORMAT_ALL;
 			break;
-		case 'd':
-			osdname = strdup(optarg);
+		case 'o':
+			dev.osdname = strdup(optarg);
 			break;
+		default:
+			usage();
+			return 1;
 		}
 	}
-
-	argc -= optind;
-	argv += optind;
-
-	if (argc <= 0) {
+	if (dev.path) {
+		if (dev.format_size_meg) {
+			ret = _format(&dev);
+			if (ret)
+				return ret;
+		}
+	} else {
 		usage();
 		return 1;
 	}
 
-	if (pid < EXOFS_MIN_PID) {
-		usage();
-		return 1;
-	}
+	ret = _mkfs(devs, &c_header);
 
-	return _mkfs(argv[0], pid, format_size_meg, (u8 *)osdname,
-		     osdname ? strlen(osdname) : 0);
+	free(devs);
+	return ret;
 }

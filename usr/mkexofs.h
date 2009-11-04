@@ -48,7 +48,17 @@
 /* mkexofs.c             */
 #define EXOFS_FORMAT_ALL (~0LLU)
 
-int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg,
-	       u8 *osdname, unsigned osdname_len);
+int mkexofs_format(struct osd_dev *od, uint64_t format_size_meg,
+		   u8 *osdname, unsigned osdname_len);
+
+struct mkexofs_cluster {
+	osd_id pid;
+	unsigned raid_no;
+	unsigned mirrors;
+	unsigned num_ods;
+	struct osd_dev *ods[1]; /* variable */
+};
+
+int exofs_mkfs(struct mkexofs_cluster *cluster);
 
 #endif /*ndef __MKEXOFS_H__*/

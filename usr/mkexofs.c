@@ -117,18 +117,35 @@ static int kick_it(struct osd_request *or, uint8_t *cred,
 }
 
 /* Format the LUN to the specified size */
-static int format(struct osd_dev *od, uint64_t lun_capacity, u8 *osdname,
-		  unsigned osdname_len)
+int mkexofs_format(struct osd_dev *od, uint64_t format_size_meg, u8 *osdname,
+		   unsigned osdname_len)
 {
-	struct osd_request *or = osd_start_request(od, GFP_KERNEL);
+	struct osd_request *or;
 	uint8_t cred_a[OSD_CAP_LEN];
 	int ret;
 
+	if (!osdname_len || !osdname) {
+		MKFS_INFO("Error: osdname must be set\n");
+		return -EINVAL;
+	}
+
+	if (format_size_meg != EXOFS_FORMAT_ALL) {
+		MKFS_INFO("Formatting osdname=[%s] %llu Mgb...",
+			  osdname, _LLU(format_size_meg));
+	} else {
+		MKFS_INFO("Formatting osdname=[%s] all available space...",
+			  osdname);
+		format_size_meg = 0;
+	}
+
+	format_size_meg *= 1024L * 1024L;
+
+	or = osd_start_request(od, GFP_KERNEL);
 	if (unlikely(!or))
 		return -ENOMEM;
 
 	_make_credential(cred_a, &osd_root_object);
-	osd_req_format(or, lun_capacity);
+	osd_req_format(or, format_size_meg);
 
 	if (osdname_len) {
 		struct osd_attr attr_osdname =
@@ -138,9 +155,11 @@ static int format(struct osd_dev *od, uint64_t lun_capacity, u8 *osdname,
 		osd_req_add_set_attr_list(or, &attr_osdname, 1);
 	}
 
+	or->timeout *= 5;
 	ret = kick_it(or, cred_a, "format");
 	osd_end_request(or);
 
+	MKFS_PRNT(" %s\n", ret ? "FAILED" : "OK");
 	return ret;
 }
 
@@ -182,7 +201,109 @@ static int create(struct osd_dev *od, const struct osd_obj_id *obj)
 	return ret;
 }
 
-static int write_super(struct osd_dev *od, const struct osd_obj_id *obj)
+/* FIXME: The only thing taken from linux/exportfs/pnfs_osd_xdr.h
+ * In the far future when this header will be exported from Kernel, use it!
+ */
+enum pnfs_osd_raid_algorithm4 {
+	PNFS_OSD_RAID_0		= 1,
+	PNFS_OSD_RAID_4		= 2,
+	PNFS_OSD_RAID_5		= 3,
+	PNFS_OSD_RAID_PQ	= 4     /* Reed-Solomon P+Q */
+};
+
+static enum pnfs_osd_raid_algorithm4 no2raid(int no)
+{
+	switch (no) {
+	case 0:
+		return PNFS_OSD_RAID_0;
+	case 4:
+		return PNFS_OSD_RAID_4;
+	case 5:
+		return PNFS_OSD_RAID_5;
+	case 6:
+		return PNFS_OSD_RAID_PQ;
+	default:
+		return -1;
+	}
+}
+
+static int create_write_device_table(struct osd_dev *od,
+				     const struct osd_obj_id *obj,
+				     const struct mkexofs_cluster *cluster)
+{
+	struct osd_request *or;
+	uint8_t cred_a[OSD_CAP_LEN];
+	struct exofs_device_table *edt;
+	struct exofs_dt_device_info *dt_dev;
+	unsigned numdevs = cluster->num_ods;
+	unsigned size = sizeof(*edt) + numdevs * sizeof(*dt_dev);
+	unsigned i;
+	int ret;
+
+	ret = create(od, obj);
+	if (unlikely(ret))
+		return ret;
+
+	_make_credential(cred_a, obj);
+
+	or = osd_start_request(od, GFP_KERNEL);
+	if (unlikely(!or))
+		return -ENOMEM;
+
+	edt = kzalloc(size, GFP_KERNEL);
+	if (unlikely(!edt)) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	edt->dt_version		= cpu_to_le32(EXOFS_DT_VER);
+	edt->dt_num_devices	= cpu_to_le64(numdevs);
+
+	edt->dt_data_map.cb_num_comps		= cpu_to_le32(numdevs);
+	edt->dt_data_map.cb_stripe_unit		= cpu_to_le64(EXOFS_BLKSIZE);
+	edt->dt_data_map.cb_group_width		= 0;
+	edt->dt_data_map.cb_group_depth		= 0;
+	edt->dt_data_map.cb_mirror_cnt		= cpu_to_le32(cluster->mirrors);
+	edt->dt_data_map.cb_raid_algorithm	=
+					 cpu_to_le32(no2raid(cluster->raid_no));
+
+	for (i = 0; i < numdevs; i++) {
+		const struct osd_dev_info *odi =
+			osduld_device_info(cluster->ods[i]);
+
+		dt_dev = &edt->dt_dev_table[i];
+		dt_dev->systemid_len = cpu_to_le32(odi->systemid_len);
+		memcpy(dt_dev->systemid, odi->systemid, odi->systemid_len);
+
+		/* FIXME support long names*/
+		dt_dev->long_name_offset = 0;
+
+		if (unlikely(odi->osdname_len + 1 >= sizeof(dt_dev->osdname))) {
+			MKFS_ERR("osdname to long length=%u max=%zu\n",
+				 odi->osdname_len + 1,
+				 sizeof(dt_dev->osdname));
+			ret = -EINVAL;
+			goto out;
+		}
+
+		/*NOTE: We know lib_osd null-terminates the osdname */
+		dt_dev->osdname_len = cpu_to_le32(odi->osdname_len);
+		if (odi->osdname_len)
+			memcpy(dt_dev->osdname, odi->osdname,
+			       odi->osdname_len+1);
+	}
+
+	osd_req_write_kern(or, obj, 0, edt, size);
+	ret = kick_it(or, cred_a, "write device table");
+
+out:
+	osd_end_request(or);
+	kfree(edt);
+	return ret;
+}
+
+static int write_super(struct osd_dev *od, const struct osd_obj_id *obj,
+		       unsigned numdevs)
 {
 	struct osd_request *or = osd_start_request(od, GFP_KERNEL);
 	uint8_t cred_a[OSD_CAP_LEN];
@@ -199,6 +320,8 @@ static int write_super(struct osd_dev *od, const struct osd_obj_id *obj)
 	data.s_magic = cpu_to_le16(EXOFS_SUPER_MAGIC);
 	data.s_newfs = 1;
 	data.s_numfiles = 0;
+	data.s_version = EXOFS_FSCB_VER;
+	data.s_dev_table_count = numdevs;
 
 	osd_req_write_kern(or, obj, 0, &data, sizeof(data));
 	ret = kick_it(or, cred_a, "write super");
@@ -299,80 +422,66 @@ static int set_inode(struct osd_dev *od, const struct osd_obj_id *obj,
 /*
  * This function creates an exofs file system on the specified OSD partition.
  */
-int exofs_mkfs(struct osd_dev *od, osd_id p_id, uint64_t format_size_meg,
-	       u8 *osdname, unsigned osdname_len)
+static int mkfs_one(struct osd_dev *od, struct mkexofs_cluster *mc)
 {
-	struct osd_obj_id obj_root = {p_id, EXOFS_ROOT_ID};
-	struct osd_obj_id obj_super = {p_id, EXOFS_SUPER_ID};
+	const struct osd_obj_id obj_root = {mc->pid, EXOFS_ROOT_ID};
+	const struct osd_obj_id obj_super = {mc->pid, EXOFS_SUPER_ID};
+	const struct osd_obj_id obj_devtable = {mc->pid, EXOFS_DEVTABLE_ID};
+	const struct osd_dev_info *odi = osduld_device_info(od);
+
 	int err;
 
-	MKFS_INFO("setting up exofs on partition 0x%llx:\n", _LLU(p_id));
-
-	/* Format LUN if requested */
-	if (format_size_meg > 0) {
-		if (osdname_len)
-			MKFS_INFO("Formatting osdname=[%s]\n", osdname);
-
-		if (format_size_meg != EXOFS_FORMAT_ALL)
-			MKFS_INFO("Formatting %llu Mgb...",
-				     _LLU(format_size_meg));
-		else {
-			MKFS_INFO("Formatting all available space...");
-			format_size_meg = 0;
-		}
-
-		err = format(od, format_size_meg * 1024 * 1024, osdname,
-			     osdname_len);
-		if (err)
-			goto out;
-		MKFS_PRNT(" OK\n");
-	}
+	MKFS_INFO("Adding device osdname-%s {\n", odi->osdname);
 
 	/* Create partition */
-	MKFS_INFO("creating partition...");
-	err = create_partition(od, p_id);
+	MKFS_INFO("	creating partition...");
+	err = create_partition(od, mc->pid);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Create object with known ID for superblock info */
-	MKFS_INFO("creating superblock...");
+	MKFS_INFO("	creating superblock...");
 	err = create(od, &obj_super);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Create root directory object */
-	MKFS_INFO("creating root directory...");
+	MKFS_INFO("	creating root directory...");
 	err = create(od, &obj_root);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
+	MKFS_INFO("	writing device table...");
+	err = create_write_device_table(od, &obj_devtable, mc);
+	if (err)
+		goto out;
+	MKFS_PRNT(" OK\n");
+
 	/* Write superblock */
-	MKFS_INFO("writing superblock...");
-	err = write_super(od, &obj_super);
+	MKFS_INFO("	writing superblock...");
+	err = write_super(od, &obj_super, mc->num_ods);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Write root directory */
-	MKFS_INFO("writing root directory...");
+	MKFS_INFO("	writing root directory...");
 	err = write_rootdir(od, &obj_root);
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
 	/* Set root partition inode attribute */
-	MKFS_INFO("writing root inode...");
-	err = set_inode(od, &obj_root, EXOFS_BLKSIZE,
-			0040000 | (0777 & ~022));
+	MKFS_INFO("	writing root inode...");
+	err = set_inode(od, &obj_root, EXOFS_BLKSIZE, 0040000 | (0777 & ~022));
 	if (err)
 		goto out;
 	MKFS_PRNT(" OK\n");
 
-	MKFS_INFO("\n");
-	MKFS_INFO("mkfs complete: enjoy your shiny new exofs!\n");
+	MKFS_INFO("}\n");
 
 out:
 	if (unlikely(err == -ENOMEM))
@@ -380,3 +489,22 @@ out:
 
 	return err;
 }
+
+int exofs_mkfs(struct mkexofs_cluster *cluster)
+{
+	unsigned i;
+	int ret;
+
+	MKFS_INFO("setting up exofs on partition 0x%llx:\n",
+		  _LLU(cluster->pid));
+
+	for (i = 0; i < cluster->num_ods; i++) {
+		ret = mkfs_one(cluster->ods[i], cluster);
+		if (unlikely(ret))
+			return ret;
+	}
+
+	MKFS_INFO("mkfs complete: enjoy your shiny new exofs!\n");
+	return 0;
+}
+
