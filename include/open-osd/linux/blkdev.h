@@ -83,7 +83,7 @@ struct request {
 	void *bounce; /* linear buffer in case sg_iovec is not supported */
 
 	int errors;
-	long resid_len;
+	unsigned resid_len;
 	void *sense;
 	unsigned sense_len;
 
