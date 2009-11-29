@@ -32,8 +32,6 @@
 
 #elif BITS_PER_LONG == 32
 
-extern uint32_t __div64_32(uint64_t *dividend, uint32_t divisor);
-
 /* The unnecessary pointer compare is there
  * to check for type safety (n must be 64bit)
  */
@@ -44,8 +42,10 @@ extern uint32_t __div64_32(uint64_t *dividend, uint32_t divisor);
 	if (likely(((n) >> 32) == 0)) {			\
 		__rem = (uint32_t)(n) % __base;		\
 		(n) = (uint32_t)(n) / __base;		\
-	} else 						\
-		__rem = __div64_32(&(n), __base);	\
+	} else {					\
+		__rem = (n) % __base;			\
+		(n) = (n) / __base;			\
+	}						\
 	__rem;						\
  })
 
