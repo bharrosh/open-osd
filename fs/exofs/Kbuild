@@ -26,5 +26,5 @@ LINUXINCLUDE := -I$(OSD_INC) $(LINUXINCLUDE)
 
 endif
 
-exofs-y := osd.o inode.o file.o symlink.o namei.o dir.o super.o
+exofs-y := ios.o inode.o file.o symlink.o namei.o dir.o super.o
 obj-$(CONFIG_EXOFS_FS) += exofs.o
