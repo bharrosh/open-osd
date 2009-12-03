@@ -10,6 +10,9 @@ KSRC ?= /lib/modules/$(shell uname -r)/build
 KBUILD_OUTPUT ?=
 ARCH ?=
 
+# M="-m32"
+M=""
+
 # this is the basic Kbuild out-of-tree invocation, with the M= option
 KBUILD_BASE = +$(MAKE) -C $(KSRC) M=`pwd` KBUILD_OUTPUT=$(KBUILD_OUTPUT) ARCH=$(ARCH)
 
@@ -24,13 +27,13 @@ osd_drivers_clean:
 	$(KBUILD_BASE) clean
 
 osd_lib: ;
-	$(MAKE) -C lib/
+	$(MAKE) M=$M -C lib/
 
 osd_lib_clean: ;
 	$(MAKE) -C lib/ clean
 
 osd_usr: osd_lib ;
-	$(MAKE) -C usr/
+	$(MAKE) M=$M -C usr/
 
 osd_usr_clean: ;
 	$(MAKE) -C usr/ clean

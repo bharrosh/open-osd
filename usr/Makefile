@@ -32,7 +32,10 @@ CWARN := -Wall -W -Wwrite-strings \
 
 CWARN_NOT=-Wcast-qual -Wcast-align -Wbad-function-cast
 
-CFLAGS = -fPIC $(CWARN) $(INCLUDES) $(DEFINES)
+CFLAGS = $M -fPIC $(CWARN) $(INCLUDES) $(DEFINES)
+ifeq ($(M), -m32)
+LDFLAGS += -melf_i386
+endif
 
 OSD_LIBS=-L../lib -losd
 
@@ -53,7 +56,7 @@ osd_ktests.c:
 	ln -sf $(SRC_PATH)/osd_ktests.c
 
 osd_test:  $(OT_OBJ) $(OT_COMMON_OBJ)
-	$(CC) -o $@ $^ $(OSD_LIBS)
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^ $(OSD_LIBS)
 
 osd_test_clean:
 	rm -vf $(OT_COMMON_OBJ:.o=.c)
@@ -67,7 +70,7 @@ mkfs_OBJ=mkexofs_main.o mkexofs.o
 # CFLAGS += -DCONFIG_MKEXOFS_DEBUG
 
 mkfs.exofs:  $(mkfs_OBJ)
-	$(CC) -o $@ $^ $(OSD_LIBS)
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^ $(OSD_LIBS)
 
 mkfs.exofs_clean:
 
@@ -77,7 +80,7 @@ $(DEPEND): $(mkfs_OBJ:.o=.c)
 osdblk_OBJ=osdblk.o
 
 osdblk:  $(osdblk_OBJ)
-	$(CC) -o $@ $^ $(OSD_LIBS)
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^ $(OSD_LIBS)
 
 osdblk_clean:
 

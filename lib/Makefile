@@ -29,8 +29,12 @@ CWARN := -Wall -W -Wwrite-strings \
 
 CWARN_NOT=-Wcast-qual -Wcast-align -Wbad-function-cast
 
-CFLAGS = -fPIC $(CWARN) $(INCLUDES) $(DEFINES)
+CFLAGS = $M -fPIC $(CWARN) $(INCLUDES) $(DEFINES)
+ifeq ($(M), -m32)
+LDFLAGS += -melf_i386
+endif
 LDFLAGS += --no-undefined -lc
+
 # --no-allow-shlib-undefined 
 COMMON_OBJ=osd_initiator.o
 LIB_OBJ=hexdump.o kalloc.o bsgdev.o osddev.o
