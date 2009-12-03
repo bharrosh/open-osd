@@ -17,7 +17,8 @@
 #define __OSD_PROTOCOL_H__
 
 #include <linux/types.h>
-#include <linux/kernel.h>
+#include <linux/time.h>
+#include <linux/string.h>
 #include <asm/unaligned.h>
 #include <scsi/scsi.h>
 
@@ -487,7 +488,30 @@ static inline int osd_data_in_integrity_info_sizeof(bool is_ver1)
 struct osd_timestamp {
 	u8 time[6]; /* number of milliseconds since 1/1/1970 UT (big endian) */
 } __packed;
-/* FIXME: define helper functions to convert to/from osd time format */
+
+#define MILI_2_NANO (1000UL * 1000UL)
+#define MAX_OSD_TIME 0x0000ffffffffffffULL
+
+static inline void osd_otime_2_utime(u8 *osd_time, struct timespec *time)
+{
+	__be64 otime = 0;
+	u64 time_mili;
+
+	memcpy(((u8 *)&otime) + 2, osd_time, sizeof(struct osd_timestamp));
+	time_mili = be64_to_cpu(otime);
+	time->tv_nsec = do_div(time_mili, 1000) * MILI_2_NANO;
+	time->tv_sec = time_mili;
+}
+
+static inline void osd_utime_2_otime(struct timespec *time, u8 *osd_time)
+{
+	__be64 otime;
+	u64 time_mili = time->tv_sec * 1000UL + time->tv_nsec / MILI_2_NANO;
+
+	WARN_ON(time_mili >= MAX_OSD_TIME);
+	otime = cpu_to_be64(time_mili);
+	memcpy(osd_time, ((u8 *)&otime) + 2, sizeof(struct osd_timestamp));
+}
 
 /*
  * Capability & Security definitions
