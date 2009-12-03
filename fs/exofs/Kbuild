@@ -17,6 +17,7 @@ ifneq ($(OSD_INC),)
 
 CONFIG_EXOFS_FS=m
 ccflags-y += -DCONFIG_EXOFS_FS -DCONFIG_EXOFS_FS_MODULE
+ccflags-y += -DOUT_OF_TREE
 # ccflags-y += -DCONFIG_EXOFS_DEBUG
 
 # if we are built out-of-tree and the hosting kernel has OSD headers

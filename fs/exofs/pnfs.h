@@ -15,8 +15,7 @@
 #ifndef __EXOFS_PNFS_H__
 #define __EXOFS_PNFS_H__
 
-#if defined(CONFIG_PNFS)
-
+#if defined(CONFIG_PNFS) && ! defined(OUT_OF_TREE)
 
 /* FIXME: move this file to: linux/exportfs/pnfs_osd_xdr.h */
 #include "../nfs/objlayout/pnfs_osd_xdr.h"
