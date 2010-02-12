@@ -55,6 +55,9 @@ struct mkexofs_cluster {
 	osd_id pid;
 	unsigned raid_no;
 	unsigned mirrors;
+	unsigned stripe_unit;
+	unsigned group_width;
+	unsigned group_depth;
 	unsigned num_ods;
 	struct osd_dev *ods[1]; /* variable */
 };

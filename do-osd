@@ -13,6 +13,7 @@ iscsiadm=iscsiadm
 # Name of iscsi service. .e.g at /etc/init.d/
 # ISCSI=iscsi
 ISCSI=open-iscsi
+# ISCSI=iscsid
 
 # TODO: edit path to osd device
 DEV_OSD0=/dev/osd0

@@ -18,7 +18,7 @@ KBUILD_BASE = +$(MAKE) -C $(KSRC) M=`pwd` KBUILD_OUTPUT=$(KBUILD_OUTPUT) ARCH=$(
 
 all: osd_lib osd_usr
 
-clean: osd_drivers_clean osd_lib_clean osd_usr_clean
+clean: osd_lib_clean osd_usr_clean
 
 osd_drivers:
 	$(KBUILD_BASE) OSD_INC=$(OSD_INC) modules

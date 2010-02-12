@@ -260,9 +260,12 @@ static int create_write_device_table(struct osd_dev *od,
 	edt->dt_num_devices	= cpu_to_le64(numdevs);
 
 	edt->dt_data_map.cb_num_comps		= cpu_to_le32(numdevs);
-	edt->dt_data_map.cb_stripe_unit		= cpu_to_le64(EXOFS_BLKSIZE);
-	edt->dt_data_map.cb_group_width		= 0;
-	edt->dt_data_map.cb_group_depth		= 0;
+	edt->dt_data_map.cb_stripe_unit		=
+					cpu_to_le64(cluster->stripe_unit);
+	edt->dt_data_map.cb_group_width		=
+					cpu_to_le32(cluster->group_width);
+	edt->dt_data_map.cb_group_depth		=
+					cpu_to_le32(cluster->group_depth);
 	edt->dt_data_map.cb_mirror_cnt		= cpu_to_le32(cluster->mirrors);
 	edt->dt_data_map.cb_raid_algorithm	=
 					 cpu_to_le32(no2raid(cluster->raid_no));

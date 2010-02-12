@@ -66,9 +66,15 @@ static void usage(void)
 	"\n"
 	"--mirrors=num_of_mirrors -m num_of_mirrors (optional)\n"
 	"        num_of_mirrors is the additional mirror device count to use.\n"
-	"        If --raid=1 then all devices are mirror devices and this\n"
-	"        option is ignored\n"
+	"        Note: \"device count\" % (num_of_mirrors+1) must be Zero\n"
 	"        Default: 0\n"
+	"\n"
+	"--stripe_pages=stripe_pages -s stripe_pages (optional)\n"
+	"        the 4k count in a stripe_unit.\n"
+	"        stripe_unit is the amount to write/read to a device before\n"
+	"	 moving to the next device\n"
+	"	 stripe_pages * 4096 == stripe_unit"
+	"        Default: 1\n"
 	"\n"
 	"[Per Device options]\n"
 	"--dev=/dev/osdX\n"
@@ -152,7 +158,7 @@ static int _format(struct _one_dev *dev)
 
 static int check_supported_params(struct mkexofs_cluster *c_header)
 {
-/* TODO: This is true to linux-open-osd.git at 2009_11_05.
+/* TODO: This is true to linux-open-osd.git at 2009_12_15.
  *       Open up things here and update the date as things advance.
  */
 
@@ -167,13 +173,22 @@ static int check_supported_params(struct mkexofs_cluster *c_header)
 		return EINVAL;
 	}
 
-	if ((c_header->num_ods - 1) != c_header->mirrors) {
-		printf("WARNING: Only multy-device mirroring is currently"
-		       "supported. Building a %d-devices mirror array\n",
-			c_header->num_ods);
-		c_header->mirrors = c_header->num_ods - 1;
+	if (0 != (c_header->num_ods % (c_header->mirrors+1))) {
+		printf("ERROR: Number_of_devices(%u) must be Multiple of"
+		       "(--mirrors(%u) + 1)\n",
+		       c_header->num_ods, c_header->mirrors);
+		return EINVAL;
 	}
 
+	unsigned stripe_count = c_header->num_ods / (c_header->mirrors+1);
+	u64 stripe_length = (u64)stripe_count * c_header->stripe_unit;
+
+	if ( !stripe_length || (stripe_length >= (1ULL << 32))) {
+		printf("ERROR: stripe_unit * stripe_count must be less then"
+		       "32bit! stripe_unit=0x%x stripe_count=0x%x\n",
+			c_header->stripe_unit, stripe_count);
+		return EINVAL;
+	}
 	return 0;
 }
 
@@ -228,7 +243,9 @@ int main(int argc, char *argv[])
 		{.name = "pid", .has_arg = 1, .flag = NULL, .val = 'p'} ,
 		{.name = "raid", .has_arg = 1, .flag = NULL, .val = 'r'} ,
 		{.name = "mirrors", .has_arg = 1, .flag = NULL, .val = 'm'} ,
-		/* stripe_unit, group_width, group_depth */
+		{.name = "stripe_pages", .has_arg = 1, .flag = NULL,
+								.val = 's'} ,
+		/* group_width, group_depth */
 
 		/* Per Device */
 		{.name = "dev", .has_arg = 1, .flag = NULL, .val = 'd'} ,
@@ -238,6 +255,7 @@ int main(int argc, char *argv[])
 	};
 	struct mkexofs_cluster c_header = {
 		.pid = 0, .raid_no = 0, .mirrors = 0, .num_ods = 0,
+		.stripe_unit = EXOFS_BLKSIZE,
 	};
 	struct _one_dev dev = {.path = NULL};
 	unsigned max_devs = 0;
@@ -246,7 +264,7 @@ int main(int argc, char *argv[])
 	int ret;
 
 	while (-1 != (op = getopt_long(argc, argv,
-				       "p:r:m:d:f::o:", opt, NULL))) {
+				       "p:r:m:s:d:f::o:", opt, NULL))) {
 		switch (op) {
 		case 'p':
 			c_header.pid = strtoll(optarg, NULL, 0);
@@ -270,6 +288,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'm':
 			c_header.mirrors = atoi(optarg);
+			break;
+		case 's':
+			c_header.stripe_unit = atoi(optarg) * EXOFS_BLKSIZE;
 			break;
 
 		case 'd':

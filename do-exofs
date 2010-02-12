@@ -14,6 +14,12 @@ UUID0="d2683732-c906-4ee1-9dbd-c10c27bb40df"
 DEV_OSD1=/dev/osd1
 UUID1="68b603b0-e438-43cb-8252-cd264c33dbcf"
 
+DEV_OSD2=/dev/osd2
+UUID2="0c5ff244-a70f-44ca-87de-781904c02d3e"
+
+DEV_OSD3=/dev/osd3
+UUID3="64722c99-b007-40c8-a359-75c55c3d7efe"
+
 MNT_PNFS=/mnt/pnfs
 
 export LD_LIBRARY_PATH=$OO_ROOT/lib
@@ -56,9 +62,11 @@ stop_mount()
 mkexofs_format()
 {
 	$USR_DIR/mkfs.exofs \
-		--pid=$PID --raid=0 --mirrors=1\
+		--pid=$PID --raid=0 --mirrors=1 --stripe_pages=4\
 		--dev=$DEV_OSD0 --format=$FORMAT_SIZE  --osdname=$UUID0 \
-		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1
+		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1 \
+		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2 \
+		--dev=$DEV_OSD3 --format=$FORMAT_SIZE  --osdname=$UUID3
 }
 
 exofs_hello_world()
