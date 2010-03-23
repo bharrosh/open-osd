@@ -76,6 +76,23 @@ static void usage(void)
 	"	 stripe_pages * 4096 == stripe_unit"
 	"        Default: 1\n"
 	"\n"
+	"--group_width=group_width -g group_width (optional)\n"
+	"        Number of devices in a stripe. (Without data integrity)\n"
+	"        == 0: No groups are used and the devices-in-a-stripe is the\n"
+	"	       number-of-devices divided by mirrors\n"
+	"	 != 0: Number of devices-in-a-stripe\n"
+	"        Note: {number-of-devices / mirrors} need not be divisible by\n"
+	"        group_width. It just means that the reminder of devices at\n"
+	"        the end will not be used by this particular file (object)\n"
+	"        but they will be used by other objects, as each object sees\n"
+	"        the device table as a cyclic list\n"
+	"        Default: 0\n"
+	"--group_depth=group_depth -t group_depth (optional)\n"
+	"        Number of times a stripe group is used before advancing to\n"
+	"        the next group of devices\n"
+	"        Must not be Zero if group_width is not zero\n"
+	"        Default: 0\n"
+	"\n"
 	"[Per Device options]\n"
 	"--dev=/dev/osdX\n"
 	"        /dev/osdX is the osd LUN (char-dev) to add to the exofs\n"
@@ -180,7 +197,11 @@ static int check_supported_params(struct mkexofs_cluster *c_header)
 		return EINVAL;
 	}
 
-	unsigned stripe_count = c_header->num_ods / (c_header->mirrors+1);
+	unsigned stripe_count;
+	if (c_header->group_width)
+		stripe_count = c_header->group_width;
+	else
+		stripe_count = c_header->num_ods / (c_header->mirrors+1);
 	u64 stripe_length = (u64)stripe_count * c_header->stripe_unit;
 
 	if ( !stripe_length || (stripe_length >= (1ULL << 32))) {
@@ -245,7 +266,10 @@ int main(int argc, char *argv[])
 		{.name = "mirrors", .has_arg = 1, .flag = NULL, .val = 'm'} ,
 		{.name = "stripe_pages", .has_arg = 1, .flag = NULL,
 								.val = 's'} ,
-		/* group_width, group_depth */
+		{.name = "group_width", .has_arg = 1, .flag = NULL,
+								.val = 'g'} ,
+		{.name = "group_depth", .has_arg = 1, .flag = NULL,
+								.val = 't'} ,
 
 		/* Per Device */
 		{.name = "dev", .has_arg = 1, .flag = NULL, .val = 'd'} ,
@@ -291,6 +315,12 @@ int main(int argc, char *argv[])
 			break;
 		case 's':
 			c_header.stripe_unit = atoi(optarg) * EXOFS_BLKSIZE;
+			break;
+		case 'g':
+			c_header.group_width = atoi(optarg);
+			break;
+		case 't':
+			c_header.group_depth = atoi(optarg);
 			break;
 
 		case 'd':
