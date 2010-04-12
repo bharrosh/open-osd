@@ -1,0 +1,117 @@
+#!/bin/bash
+#
+
+# edit your info here
+PNFS_SRV=localhost
+PNFS_MNT=/mnt/pnfs
+CTHON_PATH=/home/bharrosh/dev/git/pub/tests/cthon04-nfs41
+
+do_cmd()
+{
+	$* 2>&1 | logger -t `basename $1` &
+}
+
+prompt()
+{
+	read -p "$* >>> "
+}
+
+pnfs_hello_world()
+{
+	echo hello > $PNFS_MNT/world
+	cat $PNFS_MNT/world
+}
+
+do_nfsdbg()
+{
+# 	nfsdbg on
+	echo $((0x1000)) > /proc/sys/sunrpc/nfs_debug
+#	echo "8 7 1 7" > /proc/sys/kernel/printk
+
+# 	nfsdbg off
+# 	echo $((0x0000)) > /proc/sys/sunrpc/nfs_debug
+}
+
+do_pnfs_start()
+{
+	service nfs start
+
+	modprobe objlayoutdriver
+	mount -t nfs4 -o minorversion=1 $PNFS_SRV:/ $PNFS_MNT
+}
+
+do_pnfs_stop()
+{
+	umount $PNFS_MNT
+	modprobe --remove objlayoutdriver
+	service nfs stop
+}
+
+cthon_test()
+{
+	cd $CTHON_PATH
+	# recover from last test
+	umount /mnt/$PNFS_SRV
+	./server -a -p / $PNFS_SRV
+}
+
+dd_test()
+{
+	# let in an IO for the grace period
+	dd if=/dev/zero of=$PNFS_MNT/dd_pnfs bs=4k count=512
+
+	prompt "do truncate test (^c to stop)"
+	# start the test
+	{
+		for i in {1..10}; do
+			echo $i;
+			dd if=/dev/zero bs=4k count=512
+			sleep 1;
+		done > $PNFS_MNT/dd_pnfs ;
+		echo "===== T1 =====" ;
+	} &
+# 
+# 	{
+# 		for i in {1..30}; do
+# 			echo -n . ;
+# 			echo b > $MOUNTDIR/dd4; sleep 0.33;
+# 		done ;
+# 		echo "===== T2 =====" ;
+# 	} &
+}
+# dd if=/dev/zero of=/mnt/pnfs/dd seek=16 bs=4k count=512
+
+case $1 in
+start)
+	echo $0 Starting | logger
+
+	do_pnfs_start
+
+	echo $0 Started | logger
+	;;
+
+stop)
+	echo $0 Stopping | logger
+
+	do_pnfs_stop
+
+	echo $0 Stopped | logger
+	;;
+
+hello)
+	pnfs_hello_world
+	;;
+
+dd_test)
+	dd_test
+	;;
+
+test)
+	cthon_test
+	;;
+
+nfsdbg)
+	do_nfsdbg
+	;;
+
+esac
