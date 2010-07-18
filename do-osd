@@ -11,8 +11,8 @@
 iscsiadm=iscsiadm
 
 # Name of iscsi service. .e.g at /etc/init.d/
-# ISCSI=iscsi
-ISCSI=open-iscsi
+ISCSI=iscsi
+# ISCSI=open-iscsi
 # ISCSI=iscsid
 
 # TODO: edit path to osd device
@@ -26,6 +26,7 @@ DEV_OSD1=/dev/osd1
 # IQN_OSD=bh-buildlin2.bhalevy.com
 # IP_OSD=192.168.0.115:3260	# buml-host
 IP_OSD=192.168.0.142:3260	# buildlin2
+# IP_OSD=141.212.112.114:3260	# panasas-2
 # IP_OSD=192.168.0.241:3260	# testlin1
 # IP_OSD=192.168.0.242:3260	# testlin2
 # IP_OSD=10.64.1.132 		# pref-x4
@@ -193,10 +194,13 @@ iscsi_clean)
 	do_iscsi_clean
 	;;
 *)
+	if [ "$1" != "start" ] && [ -n "$1" ]; then
+		echo "what is $0 $1?!?"
+		exit
+	fi
 	echo $0 Starting | logger
 
 	start_iscsi_intiator
-
 	start_open_osd
 
 	login_iscsi_osd

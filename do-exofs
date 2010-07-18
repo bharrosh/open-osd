@@ -36,14 +36,12 @@ prompt()
 
 start_exofs()
 {
-# 	insmod $EXOFS_DIR/exofs.ko
 	modprobe exofs
 # 	add-symbol-file $EXOFS_DIR/exofs.ko
 }
 
 stop_exofs()
 {
-# 	rmmod exofs
 	modprobe --remove exofs
 }
 
@@ -62,11 +60,12 @@ stop_mount()
 mkexofs_format()
 {
 	$USR_DIR/mkfs.exofs \
-		--pid=$PID --raid=0 --mirrors=1 --stripe_pages=4\
+		--pid=$PID --raid=0 --mirrors=0 --stripe_pages=4\
 		--dev=$DEV_OSD0 --format=$FORMAT_SIZE  --osdname=$UUID0 \
-		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1 \
-		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2 \
-		--dev=$DEV_OSD3 --format=$FORMAT_SIZE  --osdname=$UUID3
+		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1
+
+# 		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2 \
+# 		--dev=$DEV_OSD3 --format=$FORMAT_SIZE  --osdname=$UUID3
 }
 
 exofs_hello_world()
@@ -75,16 +74,22 @@ exofs_hello_world()
 	cat $MOUNTDIR/world
 }
 
-do_nfsdbg()
+# user can also use: rpcdebug  -v -m nfsd -s all
+do_dbgon()
 {
-# 	nfsdbg
-	echo $((0x1000)) > /proc/sys/sunrpc/nfs_debug
 	echo $((0x7fff)) > /proc/sys/sunrpc/nfsd_debug
-	echo "8 7 1 7" > /proc/sys/kernel/printk
+	echo "8 1 1 7" > /proc/sys/kernel/printk
+}
 
-# 	nfsdbg off
-# 	echo $((0x0000)) > /proc/sys/sunrpc/nfs_debug
-# 	echo $((0x0)) > /proc/sys/sunrpc/nfsd_debug
+do_dbgoff()
+{
+	echo $((0x0)) > /proc/sys/sunrpc/nfsd_debug
+}
+
+cli_dbgon()
+{
+	echo $((0x3000)) > /proc/sys/sunrpc/nfs_debug
+	echo "8 1 1 7" > /proc/sys/kernel/printk
 }
 
 do_pnfs_start()
@@ -117,8 +122,13 @@ cthon_test()
 
 dd_test()
 {
+	dd if=/dev/zero of=$MNT_PNFS/dd1 bs=4k count=2048
+}
+
+trunc_test()
+{
 	# let in an IO for the grace period
-	dd if=/dev/zero of=$MNT_PNFS/dd4 bs=4k count=512
+	dd if=/dev/zero of=$MNT_PNFS/dd1 bs=4k count=512
 
 	prompt "do truncate test"
 	# start the test
@@ -177,10 +187,21 @@ restart)
 test)
 	cthon_test
 	;;
+dd_test)
+	dd_test
+	;;
+trunc_test)
+	trunc_test
+	;;
 
 format)
 	prompt mkexofs_format
 	mkexofs_format
+
+	prompt "osd restart?"
+	./do-osd stop
+	./do-osd start
+
 	echo $0 format | logger
 	;;
 
@@ -204,6 +225,7 @@ format_start)
 
 pnfs_start)
 	do_pnfs_start
+# 	cli_dbgon
 	echo $0 pnfs_start | logger
 	;;
 
@@ -212,12 +234,14 @@ pnfs_stop)
 	echo $0 pnfs_stop | logger
 	;;
 
-pnfs_test)
-	dd_test
+dbgon)
+	do_dbgon
 	;;
-
-nfsdbg)
-	do_nfsdbg
+dbgoff)
+	do_dbgoff
+	;;
+*)
+	echo "!! please specify: start|stop|restart|test|format|format_start|pnfs_start|pnfs_stop|pnfs_test|dbgon|dbgoff"
 	;;
 
 esac
