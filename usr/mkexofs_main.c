@@ -175,18 +175,14 @@ static int _format(struct _one_dev *dev)
 
 static int check_supported_params(struct mkexofs_cluster *c_header)
 {
-/* TODO: This is true to linux-open-osd.git at 2009_12_15.
- *       Open up things here and update the date as things advance.
- */
-
 	switch (c_header->raid_no) {
 	case 0:
-		break;
-	case 4:
 	case 5:
 	case 6:
+		break;
+	case 4:
 	default:
-		printf("ERROR: Only --raid==0 is currently supported\n");
+		printf("ERROR: --raid==4 is currently not supported\n");
 		return EINVAL;
 	}
 
