@@ -286,10 +286,9 @@ static inline unsigned _rq_iovec_count(struct request *rq)
 	return rq->bounce ? 0 : rq->iovec_num;
 }
 
-struct request *blk_get_request(struct request_queue *q,
-				int rw __unused, gfp_t gfp __unused)
+struct request *blk_get_request(struct request_queue *q, int rw, gfp_t gfp)
 {
-	struct request * rq = kzalloc(sizeof(struct request), 0);
+	struct request * rq = kzalloc(sizeof(struct request), gfp);
 
 	// ref counting??
 	rq->q = q;
@@ -339,9 +338,9 @@ static int blk_rq_append_bio(struct request_queue *q __unused,
 	int ret;
 
 	if (rq->rw)
-		bio->bi_rw |= (1 << BIO_RW);
+		bio->bi_rw |= REQ_WRITE;
 	else
-		bio->bi_rw &= ~(1 << BIO_RW);
+		bio->bi_rw &= ~REQ_WRITE;
 	
 	if (!rq->bio) {
 		rq->bio = bio;
@@ -356,7 +355,7 @@ static int blk_rq_append_bio(struct request_queue *q __unused,
 struct request *blk_make_request(struct request_queue *q, struct bio *bio,
 				 gfp_t gfp_mask)
 {
-	struct request *rq = blk_get_request(q, bio_rw_flagged(bio, BIO_RW),
+	struct request *rq = blk_get_request(q, bio->bi_rw & REQ_WRITE,
 					     gfp_mask);
 
 	if (rq) {

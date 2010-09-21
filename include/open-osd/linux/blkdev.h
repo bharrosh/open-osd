@@ -47,13 +47,11 @@ struct bio {
 };
 
 enum {
-	BIO_RW = 0,
+	REQ_WRITE = 1,
 	REQ_TYPE_BLOCK_PC = 1,
 	READ = 0,
 	WRITE = 1,
 };
-
-#define bio_rw_flagged(bio, flag)	((bio)->bi_rw & (1 << (flag)))
 
 void bio_put(struct bio *bio);
 void bio_endio(struct bio *bio, int error);
