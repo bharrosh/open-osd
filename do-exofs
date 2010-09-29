@@ -226,7 +226,12 @@ format_start)
 pnfs_start)
 	do_pnfs_start
 # 	cli_dbgon
+
 	echo $0 pnfs_start | logger
+	;;
+
+pnfs_hi)
+	echo hi > $MNT_PNFS/boaz
 	;;
 
 pnfs_stop)

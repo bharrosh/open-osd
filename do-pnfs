@@ -33,6 +33,7 @@ do_dbgon()
 	fi
 	echo dbgon $dbg
 	echo $(($dbg)) > /proc/sys/sunrpc/nfs_debug
+# 	echo $(($dbg)) > /proc/sys/sunrpc/rpc_debug
 
 	echo "8 1 1 7" > /proc/sys/kernel/printk
 }

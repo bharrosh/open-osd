@@ -11,9 +11,13 @@
 iscsiadm=iscsiadm
 
 # Name of iscsi service. .e.g at /etc/init.d/
-ISCSI=iscsi
+# ISCSI=iscsi
 # ISCSI=open-iscsi
-# ISCSI=iscsid
+ISCSI=iscsid
+
+# iscsi start command (In new fedora systems it's broken)
+# ISCSI_START=start
+ISCSI_START=force-start
 
 # TODO: edit path to osd device
 DEV_OSD0=/dev/osd0
@@ -63,7 +67,7 @@ do_iscsi_clean()
 start_iscsi_intiator()
 {
 	if ! service $ISCSI status; then
-		do_cmd service $ISCSI start ;
+		do_cmd service $ISCSI $ISCSI_START ;
 
 		until cat /sys/class/iscsi_transport/tcp/handle 2>/dev/null ; do
 			sleep 1;
@@ -117,14 +121,18 @@ logout_iscsi_osd()
 
 	while ls $DEV_OSD0 2>/dev/null; do sleep 1; done
 	sleep 1;
+
+# 	echo "logout_iscsi_osd $IP_OSD wait..."
+# 	sleep 7;
+# 	ls /dev/osd*
 }
 
 kernel_test_osd()
 {
 	until insmod ./drivers/scsi/osd/osd_ktests.ko; do sleep 1; done
 
-	./usr/osd_test --kernel=1 --usrlib=1 $DEV_OSD0
-	./usr/osd_test --kernel=1 --usrlib=1 $DEV_OSD1
+	./usr/osd_test --kernel=1 --usrlib=0 $DEV_OSD0
+	./usr/osd_test --kernel=1 --usrlib=0 $DEV_OSD1
 
 	rmmod osd_ktests
 }
