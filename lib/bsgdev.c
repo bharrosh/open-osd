@@ -155,6 +155,25 @@ void bio_endio(struct bio *bio, int error __unused)
 	bio_put(bio);
 }
 
+struct bio *bio_kmalloc(gfp_t gfp_mask __unused, int nr_iovecs)
+{
+	return __new_bio(nr_iovecs);
+}
+
+int bio_add_pc_page(struct request_queue *q __unused,
+		    struct bio *bio, struct page *page, unsigned len,
+		    unsigned offset __unused)
+{
+	if (bio->bi_max_vecs >= bio->bi_vecs)
+		return 0;
+
+	bio->bi_vec[bio->bi_vecs].mem = page;
+	bio->bi_vec[bio->bi_vecs].len = len;
+	bio->bi_size += len;
+
+	bio->bi_vecs++;
+}
+
 struct bio *bio_map_kern(struct request_queue *q __unused,
 			 void *data, unsigned int len, gfp_t gfp __unused)
 {

@@ -53,8 +53,17 @@ enum {
 	WRITE = 1,
 };
 
+/* For user-mode we make it look like everything is a single page */
+struct page *page;
+#define PAGE_SIZE ~0
+#define offset_in_page(p) 0
+#define virt_to_page(p) ((struct page *)p)
+
 void bio_put(struct bio *bio);
 void bio_endio(struct bio *bio, int error);
+struct bio *bio_kmalloc(gfp_t gfp_mask, int nr_iovecs);
+int bio_add_pc_page(struct request_queue *q, struct bio *bio, struct page *page,
+		    unsigned int len, unsigned int offset);
 struct bio *bio_map_kern(
 	struct request_queue *q, void *data, unsigned int len,
 			 gfp_t gfp_mask);
