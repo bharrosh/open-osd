@@ -12,9 +12,10 @@
  * Boaz Harrosh <bharrosh@panasas.com>
  */
 
-#include <linux/types.h>
 #include <stdio.h>
 #include <ctype.h>
+
+#include <linux/types.h>
 #include "kalloc.h"
 
 #define scnprintf snprintf

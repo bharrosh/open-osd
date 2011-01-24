@@ -36,9 +36,6 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <open-osd/libosd.h>
-#include "osd_ktests.h"
-
 #include <dirent.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -47,6 +44,9 @@
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+
+#include <open-osd/libosd.h>
+#include "osd_ktests.h"
 
 /* missing from old distro headers*/
 #ifndef ENOIOCTLCMD

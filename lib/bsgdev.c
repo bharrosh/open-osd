@@ -38,14 +38,14 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <linux/blkdev.h>
-#include <linux/bsg.h>
-#include <scsi/sg.h>
-
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <sys/ioctl.h>
+
+#include <linux/blkdev.h>
+#include <linux/bsg.h>
+#include <scsi/sg.h>
 
 static int _queue_num_requests(struct request_queue* q);
 static int _bsg_wait_response(struct request_queue* q);

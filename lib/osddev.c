@@ -37,16 +37,15 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <open-osd/libosd.h>
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
 
+#include <open-osd/libosd.h>
 #include <linux/blkdev.h>
 #include <linux/bsg.h>
 #include <scsi/sg.h>
 #include <scsi/scsi_device.h>
-
-#include <dirent.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 struct libosd_dev {
 	struct osd_dev od; /* keep this first! (container_of not) */
