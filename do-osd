@@ -19,6 +19,9 @@ ISCSI=iscsid
 # ISCSI_START=start
 ISCSI_START=force-start
 
+# iscsi used to hold it's files in /etc/iscsi/... it has now moved
+ISCSI_CFG=/var/lib/iscsi
+
 # TODO: edit path to osd device
 DEV_OSD0=/dev/osd0
 DEV_OSD1=/dev/osd1
@@ -59,9 +62,14 @@ stop_sim()
 
 do_iscsi_clean()
 {
-	rm -rf /etc/iscsi/ifaces/*
-	rm -rf /etc/iscsi/nodes/*
-	rm -rf /etc/iscsi/send_targets/*
+	rm -vrf $ISCSI_CFG/ifaces/*
+	rm -vrf $ISCSI_CFG/ifaces/.*
+
+	rm -vrf $ISCSI_CFG/nodes/*
+	rm -vrf $ISCSI_CFG/nodes/.*
+
+	rm -vrf $ISCSI_CFG/send_targets/*
+	rm -vrf $ISCSI_CFG/send_targets/.*
 }
 
 start_iscsi_intiator()

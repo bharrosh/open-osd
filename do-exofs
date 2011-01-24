@@ -23,6 +23,7 @@ UUID3="64722c99-b007-40c8-a359-75c55c3d7efe"
 MNT_PNFS=/mnt/pnfs
 
 export LD_LIBRARY_PATH=$OO_ROOT/lib
+GIT_TEST_LINUX=/home/bharrosh/dev/git/pub/scsi-misc
 
 do_cmd()
 {
@@ -66,6 +67,15 @@ mkexofs_format()
 
 # 		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2 \
 # 		--dev=$DEV_OSD3 --format=$FORMAT_SIZE  --osdname=$UUID3
+}
+
+# this can coexist with ./do-ect $PID are different here and there
+mkexofs_only()
+{
+	$USR_DIR/mkfs.exofs \
+		--pid=$PID --raid=0 --mirrors=0 --stripe_pages=4\
+		--dev=$DEV_OSD0 \
+		--dev=$DEV_OSD1
 }
 
 exofs_hello_world()
@@ -194,12 +204,32 @@ trunc_test)
 	trunc_test
 	;;
 
+git_test)
+	pushd $MOUNTDIR
+	tail -1117 /var/log/messages > /var/log/messages.git_test.$2
+	echo "" > /var/log/messages
+	echo "================= $2 ==============" | logger
+	echo "================= $2 =============="
+	/bin/rm -rf scsi-misc || exit
+	git clone $GIT_TEST_LINUX || exit
+	ls -li ; vmstat ;
+	popd
+	;;
+
+mkfs)
+	prompt mkexofs_only?
+	echo "$0 mkfs starting" | logger
+	mkexofs_only
+	echo "$0 mkfs done" | logger
+	;;
+
 format)
 	prompt mkexofs_format
 	mkexofs_format
 
-	prompt "osd restart?"
+	prompt "osd stop?"
 	./do-osd stop
+	prompt "osd start?"
 	./do-osd start
 
 	echo $0 format | logger
