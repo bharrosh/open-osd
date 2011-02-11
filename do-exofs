@@ -37,6 +37,7 @@ prompt()
 
 start_exofs()
 {
+	modprobe raid456
 	modprobe exofs
 # 	add-symbol-file $EXOFS_DIR/exofs.ko
 }
@@ -48,7 +49,7 @@ stop_exofs()
 
 start_mount()
 {
-	OPT="pid=$PID,_netdev"
+	OPT="osdname=$UUID0,pid=$PID,_netdev"
 
 	mount -t exofs -o $OPT $DEV_OSD0 $MOUNTDIR
 }
@@ -61,11 +62,11 @@ stop_mount()
 mkexofs_format()
 {
 	$USR_DIR/mkfs.exofs \
-		--pid=$PID --raid=0 --mirrors=0 --stripe_pages=4\
+		--pid=$PID --raid=5 --mirrors=0 --stripe_pages=4\
 		--dev=$DEV_OSD0 --format=$FORMAT_SIZE  --osdname=$UUID0 \
-		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1
+		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1 \
+		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2
 
-# 		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2 \
 # 		--dev=$DEV_OSD3 --format=$FORMAT_SIZE  --osdname=$UUID3
 }
 
@@ -160,6 +161,11 @@ trunc_test()
 	} &
 }
 # dd if=/dev/zero of=/mnt/pnfs/dd seek=16 bs=4k count=512
+
+clear_cache()
+{
+	sync; echo 3 > /proc/sys/vm/drop_caches
+}
 
 case $1 in
 start)
@@ -275,6 +281,36 @@ dbgon)
 dbgoff)
 	do_dbgoff
 	;;
+
+hi)
+	do_dbgon
+	do_dbgoff
+	start_exofs
+	start_mount
+
+# 	prompt exofs_hello_world
+# 	echo hi > $MOUNTDIR/boaz
+	;;
+# ih)
+# 
+# 	rm -f $MOUNTDIR/bb*
+# 	for i in {1..10}; do 
+# 		echo $MOUNTDIR/bb$i
+# 		touch $MOUNTDIR/bb$i
+# 	done
+# 
+# 	pushd $MOUNTDIR/
+# 	rm -rf linux-pnfs
+# 	git clone /home/bharrosh/dev/git/pub/linux-pnfs/
+# 	popd
+# 
+# 	stop_mount
+# 	;;
+
+clear_cache)
+	clear_cache
+	;;
+
 *)
 	echo "!! please specify: start|stop|restart|test|format|format_start|pnfs_start|pnfs_stop|pnfs_test|dbgon|dbgoff"
 	;;
