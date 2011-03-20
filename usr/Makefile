@@ -39,7 +39,7 @@ endif
 
 OSD_LIBS=-L../lib -losd
 
-ALL = osd_test mkfs.exofs osdblk
+ALL = osd_test mkfs.exofs osd
 all: $(DEPEND) $(ALL)
 
 clean: $(ALL:=_clean)
@@ -76,15 +76,15 @@ mkfs.exofs_clean:
 
 $(DEPEND): $(mkfs_OBJ:.o=.c)
 
-# =============== osdblk ======================================================
-osdblk_OBJ=osdblk.o
+# =============== osd ==========================================================
+osd_OBJ=osd.o
 
-osdblk:  $(osdblk_OBJ)
+osd:  $(osd_OBJ)
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^ $(OSD_LIBS)
 
-osdblk_clean:
+osd_clean:
 
-$(DEPEND): $(osdblk_OBJ:.o=.c)
+$(DEPEND): $(osd_OBJ:.o=.c)
 
 # =============== common rules =================================================
 # every thing should compile if Makefile changed
