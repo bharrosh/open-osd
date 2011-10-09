@@ -20,6 +20,20 @@ UUID2="0c5ff244-a70f-44ca-87de-781904c02d3e"
 DEV_OSD3=/dev/osd3
 UUID3="64722c99-b007-40c8-a359-75c55c3d7efe"
 
+
+DEV_OSD4=/dev/osd4
+UUID4="688b9896-59ef-4422-8bba-436e634a3654"
+
+DEV_OSD5=/dev/osd5
+UUID5="b5cb2130-99f8-4468-8a4b-502a41124604"
+
+DEV_OSD6=/dev/osd6
+UUID6="0ca752a8-497d-4705-8198-34f60f7f83ed"
+
+DEV_OSD7=/dev/osd7
+UUID7="0528bdfc-ea4e-4020-ae9e-d555dc32bfdf"
+
+
 MNT_PNFS=/mnt/pnfs
 
 export LD_LIBRARY_PATH=$OO_ROOT/lib
@@ -37,7 +51,6 @@ prompt()
 
 start_exofs()
 {
-	modprobe raid456
 	modprobe exofs
 # 	add-symbol-file $EXOFS_DIR/exofs.ko
 }
@@ -59,15 +72,34 @@ stop_mount()
 	umount $MOUNTDIR
 }
 
+S_PAGES=16
+# GROUP_WIDTH=1
+# GROUP_DEPTH=32768
+# GROUP_WIDTH=8
+# GROUP_DEPTH=4096
+GROUP_WIDTH=3
+GROUP_DEPTH=1024
+
+cross_group_test()
+{
+	dd if=/dev/zero of=$MOUNTDIR/cgt bs=4K \
+		seek=$(( S_PAGES * GROUP_WIDTH * GROUP_DEPTH - 1)) \
+		count=2
+}
+
 mkexofs_format()
 {
 	$USR_DIR/mkfs.exofs \
-		--pid=$PID --raid=5 --mirrors=0 --stripe_pages=4\
+		--pid=$PID --raid=0 --mirrors=0 --stripe_pages=$S_PAGES \
+		--group_width=$GROUP_WIDTH --group_depth=$GROUP_DEPTH \
 		--dev=$DEV_OSD0 --format=$FORMAT_SIZE  --osdname=$UUID0 \
 		--dev=$DEV_OSD1 --format=$FORMAT_SIZE  --osdname=$UUID1 \
-		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2
-
-# 		--dev=$DEV_OSD3 --format=$FORMAT_SIZE  --osdname=$UUID3
+		--dev=$DEV_OSD2 --format=$FORMAT_SIZE  --osdname=$UUID2 \
+ 		--dev=$DEV_OSD3 --format=$FORMAT_SIZE  --osdname=$UUID3 \
+		--dev=$DEV_OSD4 --format=$FORMAT_SIZE  --osdname=$UUID4 \
+		--dev=$DEV_OSD5 --format=$FORMAT_SIZE  --osdname=$UUID5 \
+		--dev=$DEV_OSD6 --format=$FORMAT_SIZE  --osdname=$UUID6 \
+ 		--dev=$DEV_OSD7 --format=$FORMAT_SIZE  --osdname=$UUID7
 }
 
 # this can coexist with ./do-ect $PID are different here and there
@@ -86,10 +118,15 @@ exofs_hello_world()
 }
 
 # user can also use: rpcdebug  -v -m nfsd -s all
-do_dbgon()
+srv_dbgon()
 {
-	echo $((0x7fff)) > /proc/sys/sunrpc/nfsd_debug
-	echo "8 1 1 7" > /proc/sys/kernel/printk
+	dbg=0x7fff
+	if [ "$1" != "" ]; then
+	  dbg=$1
+	  echo dbgon $dbg
+	fi
+	echo $(($dbg)) > /proc/sys/sunrpc/nfsd_debug
+# 	echo "8 1 1 7" > /proc/sys/kernel/printk
 }
 
 do_dbgoff()
@@ -99,8 +136,13 @@ do_dbgoff()
 
 cli_dbgon()
 {
-	echo $((0x3000)) > /proc/sys/sunrpc/nfs_debug
-	echo "8 1 1 7" > /proc/sys/kernel/printk
+	dbg=0x2000
+	if [ "$1" != "" ]; then
+	  dbg=$1
+	  echo dbgon $dbg
+	fi
+	echo $(($dbg)) > /proc/sys/sunrpc/nfs_debug
+# 	echo "8 1 1 7" > /proc/sys/kernel/printk
 }
 
 do_pnfs_start()
@@ -111,6 +153,9 @@ do_pnfs_start()
 	fi
 
 	service nfs start
+#	echo 15 >/proc/fs/nfsd/nfsv4leasetime
+#	echo 3 >/proc/fs/nfsd/nfsv4gracetime
+#	echo 3 >/proc/sys/fs/nfs/nlm_grace_period
 
 	modprobe objlayoutdriver
 
@@ -131,9 +176,14 @@ cthon_test()
 	./server -a -p / localhost
 }
 
-dd_test()
+exofs_dd_test()
 {
-	dd if=/dev/zero of=$MNT_PNFS/dd1 bs=4k count=2048
+	dd if=/dev/zero of=$MOUNTDIR/dd1_exofs bs=4k count=2048
+}
+
+pnfs_dd_test()
+{
+	dd if=/dev/zero of=$MNT_PNFS/dd1_pnfs bs=4k count=2048
 }
 
 trunc_test()
@@ -203,9 +253,16 @@ restart)
 test)
 	cthon_test
 	;;
-dd_test)
-	dd_test
+pnfs_dd_test)
+	pnfs_dd_test
 	;;
+exofs_dd_test)
+	exofs_dd_test
+	;;
+cgt)
+	cross_group_test
+	;;
+
 trunc_test)
 	trunc_test
 	;;
@@ -275,21 +332,23 @@ pnfs_stop)
 	echo $0 pnfs_stop | logger
 	;;
 
-dbgon)
-	do_dbgon
+clidbgon)
+	cli_dbgon $2
+	;;
+srvdbgon)
+	srv_dbgon $2
 	;;
 dbgoff)
 	do_dbgoff
 	;;
 
 hi)
-	do_dbgon
-	do_dbgoff
-	start_exofs
-	start_mount
-
-# 	prompt exofs_hello_world
-# 	echo hi > $MOUNTDIR/boaz
+	do_pnfs_start
+	echo pnfs_dd_test
+	pnfs_dd_test
+	;;
+bye)
+	do_pnfs_stop
 	;;
 # ih)
 # 

@@ -7,6 +7,16 @@
 # in gdb do> add-symbol-file path-to-.ko-file addar from above ()
 #
 
+source ./d-osd.conf
+
+if [ $IP_OSD == "" ]; then
+	IP_OSD=192.168.0.117:3260	# buml-host
+fi
+
+if [ $DEV_OSD == "" ]; then
+	DEV_OSD=/dev/osd0
+fi
+
 # which iscsiadm
 iscsiadm=iscsiadm
 
@@ -21,27 +31,6 @@ ISCSI_START=force-start
 
 # iscsi used to hold it's files in /etc/iscsi/... it has now moved
 ISCSI_CFG=/var/lib/iscsi
-
-# TODO: edit path to osd device
-DEV_OSD0=/dev/osd0
-DEV_OSD1=/dev/osd1
-
-# TODO: Edit info of your target (only $IP_OSD is used)
-#
-# OSD 2 osc's osd-target
-# SIM=tgtd
-# IQN_OSD=bh-buildlin2.bhalevy.com
-# IP_OSD=192.168.0.115:3260	# buml-host
-IP_OSD=192.168.0.142:3260	# buildlin2
-# IP_OSD=141.212.112.114:3260	# panasas-2
-# IP_OSD=192.168.0.241:3260	# testlin1
-# IP_OSD=192.168.0.242:3260	# testlin2
-# IP_OSD=10.64.1.132 		# pref-x4
-
-# 0SD 1 IBM
-# SIM=ibm-osd-sim
-# IQN_OSD=iqn.2004-11.com.ibm:fb:bh-buildlin2.bhalevy.com
-# IP_OSD=192.168.0.142:3261
 
 do_cmd()
 {
@@ -62,6 +51,7 @@ stop_sim()
 
 do_iscsi_clean()
 {
+	$iscsiadm -m node -o delete
 	rm -vrf $ISCSI_CFG/ifaces/*
 	rm -vrf $ISCSI_CFG/ifaces/.*
 
@@ -121,13 +111,13 @@ login_iscsi_osd()
 		sleep 1; 
 	done
 
-	until ls $DEV_OSD0 2>/dev/null; do sleep 1; done
+# 	until ls $DEV_OSD 2>/dev/null; do sleep 1; done
 }
 logout_iscsi_osd()
 {
 	do_cmd $iscsiadm -m node -p $IP_OSD --logout
 
-	while ls $DEV_OSD0 2>/dev/null; do sleep 1; done
+	while ls $DEV_OSD 2>/dev/null; do sleep 1; done
 	sleep 1;
 
 # 	echo "logout_iscsi_osd $IP_OSD wait..."
@@ -139,16 +129,14 @@ kernel_test_osd()
 {
 	until insmod ./drivers/scsi/osd/osd_ktests.ko; do sleep 1; done
 
-	./usr/osd_test --kernel=1 --usrlib=0 $DEV_OSD0
-	./usr/osd_test --kernel=1 --usrlib=0 $DEV_OSD1
+	./usr/osd_test --kernel=1 --usrlib=0 $DEV_OSD
 
 	rmmod osd_ktests
 }
 
 test_osd()
 {
-	./usr/osd_test --kernel=0 --usrlib=1 $DEV_OSD0
-	./usr/osd_test --kernel=0 --usrlib=1 $DEV_OSD1
+	./usr/osd_test --kernel=0 --usrlib=1 $DEV_OSD
 }
 
 do_osdblk()
