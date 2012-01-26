@@ -47,6 +47,8 @@
 #include <scsi/sg.h>
 #include <scsi/scsi_device.h>
 
+#include "osd_debug.h"
+
 struct libosd_dev {
 	struct osd_dev od; /* keep this first! (container_of not) */
 	struct osd_dev_info odi;
@@ -67,19 +69,27 @@ int osd_open(const char *osd_path, struct osd_dev **pod)
 	if (!lod)
 		return ENOMEM;
 
-	if (osdpath_to_bsgpath(osd_path, bsg_path))
+	ret = osdpath_to_bsgpath(osd_path, bsg_path)) {
+	if (unlikely(ret)) {
+		OSD_ERR("Error in osdpath_to_bsgpath(%s) => %d",
+			osd_path, ret);
 		goto dealloc;
+	}
 
 	ret = bsg_open(&lod->bsg, bsg_path);
-	if (ret)
+	if (unlikely(ret)) {
+		OSD_ERR("Error bsg_open(%s) => %d", bsg_path, ret);
 		goto dealloc;
+	}
 
 	lod->scsi_device.request_queue = &lod->bsg;
 	osd_dev_init(&lod->od, &lod->scsi_device);
 	osd_sec_init_nosec_doall_caps(caps, &osd_root_object, false, true);
 	ret = osd_auto_detect_ver(&lod->od, caps, &lod->odi);
-	if (ret)
+	if (unlikely(ret)) {
+		OSD_ERR("Error in osd_auto_detect_ver => %d", ret);
 		goto bsg_close;
+	}
 
 	*pod = &lod->od;
 	return 0;
