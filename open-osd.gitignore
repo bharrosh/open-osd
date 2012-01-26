@@ -59,6 +59,9 @@ usr/osd_test
 usr/mkfs.exofs
 usr/osd
 d-osd.conf
+128M.rt
+512M.rt
+do-ect
 
 #
 # Misk build files
