@@ -144,8 +144,12 @@ static int _format(struct _one_dev *dev)
 	int ret;
 
 	ret = osd_open(dev->path, &od);
-	if (ret)
+	if (ret) {
+		printf("exofs_mkfs: Error! Could not open [%s]\n", dev->path);
 		return ret;
+	}
+
+	BUG_ON(!od);
 
 	if (!dev->osdname) {
 		printf("exofs_mkfs: Error! --format must also use --osdname\n"
