@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <limits.h>
+#include <assert.h>
 
 #define __bitwise
 
@@ -90,7 +91,8 @@ enum {
 })
 #define BUG_ON(condition) ({						\
 	int __ret_warn_on = !!(condition);				\
-	unlikely(__ret_warn_on);					\
+	if (unlikely(__ret_warn_on))					\
+		assert(0);						\
 })
 
 #ifndef ULLONG_MAX
